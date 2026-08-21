@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Navigator mount — drawing set</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#D9DEDA;
+    --ink:#151F1D;
+    --graphite:#5D6A66;
+    --faint:#A8B2AD;
+    --hivis:#E8B004;
+    --seal:#2A7B88;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'IBM Plex Mono',ui-monospace,monospace;
+    padding:28px 18px 60px;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+  header{border-bottom:1.5px solid var(--ink);padding-bottom:14px;margin-bottom:26px}
+  h1{
+    font-family:'Barlow Condensed',sans-serif;
+    font-weight:600;font-size:clamp(26px,6vw,42px);
+    letter-spacing:.06em;text-transform:uppercase;margin:0;line-height:1
+  }
+  .sub{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--graphite);margin-top:8px}
+  .sheet{
+    background:#E4E8E4;border:1.5px solid var(--ink);
+    margin-bottom:26px;padding:0;overflow:hidden
+  }
+  .sheet-hd{
+    display:flex;justify-content:space-between;align-items:baseline;
+    padding:9px 14px;border-bottom:1px solid var(--ink);gap:12px;flex-wrap:wrap
+  }
+  .sheet-hd h2{
+    font-family:'Barlow Condensed',sans-serif;font-weight:600;
+    font-size:17px;letter-spacing:.1em;text-transform:uppercase;margin:0
+  }
+  .sheet-hd .num{font-size:10.5px;letter-spacing:.1em;color:var(--graphite)}
+  svg{display:block;width:100%;height:auto}
+  .note{
+    padding:12px 14px;border-top:1px solid var(--faint);
+    font-size:12px;line-height:1.65;color:#26332F
+  }
+  .note b{font-weight:500;color:var(--ink)}
+  text{font-family:'IBM Plex Mono',monospace}
+  .lbl{font-size:8.5px;fill:var(--ink);letter-spacing:.05em}
+  .dim{font-size:7.5px;fill:var(--graphite)}
+  .ttl{font-family:'Barlow Condensed',sans-serif;font-size:11px;fill:var(--ink);letter-spacing:.1em}
+  .lead{stroke:var(--graphite);stroke-width:.6;fill:none}
+  .out{stroke:var(--ink);stroke-width:1.4;fill:none}
+  .thin{stroke:var(--graphite);stroke-width:.8;fill:none}
+  .cl{stroke:var(--graphite);stroke-width:.6;stroke-dasharray:9 3 1.5 3;fill:none}
+  .hv{fill:var(--hivis)}
+  .hvline{stroke:var(--hivis);stroke-width:1.6;fill:none}
+  .sealc{stroke:var(--seal);stroke-width:1.6;fill:none}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:10.5px;color:var(--graphite);margin-bottom:22px;letter-spacing:.04em}
+  .sw{display:inline-block;width:11px;height:11px;vertical-align:-1px;margin-right:5px;border:1px solid var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Navigator mount</h1>
+  <div class="sub">Triumph Speed 400 · reuses BOBO clamp &amp; arm · quarter-turn release</div>
+</header>
+
+<div class="legend">
+  <span><span class="sw" style="background:var(--hivis)"></span>quarter-turn / moving parts</span>
+  <span><span class="sw" style="background:var(--seal)"></span>sealing features</span>
+  <span><span class="sw" style="background:#E4E8E4"></span>reused BOBO hardware</span>
+</div>
+
+<!-- ============ SHEET 1 ============ -->
+<div class="sheet">
+  <div class="sheet-hd"><h2>1 — Exploded assembly</h2><span class="num">SIDE ELEVATION · NTS</span></div>
+  <svg viewBox="0 0 820 300" role="img" aria-label="Exploded side view of the mount assembly">
+    <line class="cl" x1="40" y1="150" x2="790" y2="150"/>
+
+    <!-- handlebar -->
+    <circle class="out" cx="92" cy="150" r="27" fill="#CFD6D1"/>
+    <circle class="thin" cx="92" cy="150" r="20"/>
+    <text class="lbl" x="92" y="212" text-anchor="middle">HANDLEBAR</text>
+    <text class="dim" x="92" y="224" text-anchor="middle">Ø22</text>
+
+    <!-- clamp -->
+    <path class="out" d="M92 116 a34 34 0 0 1 0 68 M118 128 L150 138 L150 162 L118 172 Z" fill="#E4E8E4"/>
+    <text class="lbl" x="128" y="98" text-anchor="middle">CLAMP</text>
+    <text class="dim" x="128" y="110" text-anchor="middle">reuse</text>
+
+    <!-- ball joint -->
+    <circle class="out" cx="176" cy="150" r="21" fill="#E4E8E4"/>
+    <rect class="out" x="197" y="138" width="34" height="24" rx="3" fill="#E4E8E4"/>
+    <text class="lbl" x="196" y="212" text-anchor="middle">BALL JOINT</text>
+    <text class="dim" x="196" y="224" text-anchor="middle">reuse · sets angle</text>
+
+    <!-- copper plate -->
+    <rect class="out" x="252" y="86" width="15" height="128" rx="2" fill="#C99A6E"/>
+    <circle class="thin" cx="259" cy="118" r="4"/>
+    <circle class="thin" cx="259" cy="182" r="4"/>
+    <text class="lbl" x="259" y="72" text-anchor="middle">BOBO PLATE</text>
+    <text class="dim" x="259" y="236" text-anchor="middle">drill 2 × Ø5</text>
+    <text class="dim" x="259" y="247" text-anchor="middle">at 64 c/c</text>
+
+    <!-- bolts -->
+    <line class="thin" x1="267" y1="118" x2="330" y2="118"/>
+    <line class="thin" x1="267" y1="182" x2="330" y2="182"/>
+    <text class="dim" x="299" y="112" text-anchor="middle">M4 × 16 nyloc</text>
+
+    <!-- adapter plate -->
+    <path class="out" d="M336 90 L352 90 L352 210 L336 210 Z" fill="#E4E8E4"/>
+    <circle class="thin" cx="344" cy="118" r="4"/>
+    <circle class="thin" cx="344" cy="182" r="4"/>
+    <path class="hvline" d="M352 128 L372 128 L372 172 L352 172"/>
+    <text class="lbl" x="352" y="72" text-anchor="middle">ADAPTER — PRINTED</text>
+    <text class="dim" x="352" y="236" text-anchor="middle">PETG · 4 mm wall</text>
+    <text class="dim" x="352" y="247" text-anchor="middle">female ¼-turn</text>
+
+    <!-- twist arrow -->
+    <path class="hvline" d="M404 106 a30 30 0 0 1 26 15" stroke-linecap="round"/>
+    <path class="hv" d="M430 121 l-11 -3 l4 10 z"/>
+    <text class="lbl" x="416" y="98" text-anchor="middle" fill="#8A6A02">90°</text>
+
+    <!-- boss -->
+    <rect class="hvline" x="452" y="130" width="22" height="40" rx="3" fill="#F4E3AC"/>
+    <line class="thin" x1="452" y1="136" x2="474" y2="136"/>
+    <line class="thin" x1="452" y1="164" x2="474" y2="164"/>
+    <text class="lbl" x="463" y="196" text-anchor="middle">3-LUG BOSS</text>
+
+    <!-- enclosure -->
+    <rect class="out" x="474" y="70" width="30" height="160" rx="5" fill="#E4E8E4"/>
+    <rect class="out" x="504" y="70" width="118" height="160" rx="5" fill="#EEF1EE"/>
+    <rect class="sealc" x="500" y="70" width="8" height="160"/>
+    <rect class="out" x="614" y="80" width="8" height="140" rx="2" fill="#BFC9CE"/>
+    <text class="lbl" x="563" y="56" text-anchor="middle">ENCLOSURE</text>
+    <text class="dim" x="563" y="256" text-anchor="middle">94 × 58 × 20</text>
+    <line class="lead" x1="504" y1="248" x2="504" y2="238"/>
+    <text class="dim" x="480" y="268" text-anchor="middle">gasket</text>
+    <line class="lead" x1="618" y1="248" x2="618" y2="228"/>
+    <text class="dim" x="640" y="268" text-anchor="middle">PC window</text>
+
+    <!-- gland -->
+    <rect class="sealc" x="540" y="230" width="16" height="16" rx="2"/>
+    <path class="thin" d="M548 246 q0 26 -22 32"/>
+    <text class="dim" x="512" y="292" text-anchor="middle">gland + drip loop</text>
+
+    <!-- title block -->
+    <rect class="out" x="648" y="196" width="150" height="86" fill="#DDE2DE"/>
+    <line class="thin" x1="648" y1="222" x2="798" y2="222"/>
+    <line class="thin" x1="648" y1="248" x2="798" y2="248"/>
+    <line class="thin" x1="723" y1="248" x2="723" y2="282"/>
+    <text class="ttl" x="656" y="214">MOUNT ASSY</text>
+    <text class="dim" x="656" y="240">JT-NAV-100</text>
+    <text class="dim" x="656" y="266">SCALE</text>
+    <text class="dim" x="656" y="277">NTS</text>
+    <text class="dim" x="731" y="266">REV</text>
+    <text class="dim" x="731" y="277">A</text>
+  </svg>
+  <div class="note">
+    <b>Two printed parts, everything else reused.</b> The adapter bolts flat to the copper plate through two drilled holes; the boss is printed integrally into the enclosure back. Measure the plate before printing — 64&nbsp;mm centres is a placeholder until you have calipers on it.
+  </div>
+</div>
+
+<!-- ============ SHEET 2 ============ -->
+<div class="sheet">
+  <div class="sheet-hd"><h2>2 — Quarter-turn interface</h2><span class="num">VIEW ON MOUNTING FACE</span></div>
+  <svg viewBox="0 0 820 300" role="img" aria-label="Face view of the three-lug quarter turn interface, disengaged and engaged">
+
+    <!-- ---- disengaged ---- -->
+    <text class="lbl" x="200" y="34" text-anchor="middle">A · INSERT</text>
+    <circle class="out" cx="200" cy="150" r="72" fill="#E9ECE9"/>
+    <circle class="thin" cx="200" cy="150" r="44"/>
+    <line class="cl" x1="110" y1="150" x2="290" y2="150"/>
+    <line class="cl" x1="200" y1="60" x2="200" y2="240"/>
+    <!-- slots at 120 -->
+    <g class="thin" fill="#CFD6D1">
+      <path d="M200 150 L186 82 A70 70 0 0 1 214 82 Z"/>
+      <path d="M200 150 L259 184 A70 70 0 0 1 245 208 Z"/>
+      <path d="M200 150 L155 208 A70 70 0 0 1 141 184 Z"/>
+    </g>
+    <!-- lugs aligned to slots -->
+    <g class="hv" opacity=".95">
+      <path d="M200 150 L188 90 A62 62 0 0 1 212 90 Z"/>
+      <path d="M200 150 L253 181 A62 62 0 0 1 241 202 Z"/>
+      <path d="M200 150 L159 202 A62 62 0 0 1 147 181 Z"/>
+    </g>
+    <circle class="out" cx="200" cy="150" r="26" fill="#E9ECE9"/>
+    <text class="dim" x="200" y="262" text-anchor="middle">lugs align with slots · push on</text>
+
+    <!-- rotate arrow between -->
+    <path class="hvline" d="M330 150 a42 42 0 0 1 84 0" stroke-linecap="round"/>
+    <path class="hv" d="M414 150 l-6 -11 l13 1 z"/>
+    <text class="lbl" x="372" y="98" text-anchor="middle" fill="#8A6A02">ROTATE 90°</text>
+    <text class="dim" x="372" y="176" text-anchor="middle">one gloved hand</text>
+
+    <!-- ---- engaged ---- -->
+    <text class="lbl" x="620" y="34" text-anchor="middle">B · LOCKED</text>
+    <circle class="out" cx="620" cy="150" r="72" fill="#E9ECE9"/>
+    <circle class="thin" cx="620" cy="150" r="44"/>
+    <line class="cl" x1="530" y1="150" x2="710" y2="150"/>
+    <line class="cl" x1="620" y1="60" x2="620" y2="240"/>
+    <g class="thin" fill="#CFD6D1">
+      <path d="M620 150 L606 82 A70 70 0 0 1 634 82 Z"/>
+      <path d="M620 150 L679 184 A70 70 0 0 1 665 208 Z"/>
+      <path d="M620 150 L575 208 A70 70 0 0 1 561 184 Z"/>
+    </g>
+    <!-- lugs rotated under shoulders -->
+    <g class="hv" opacity=".95">
+      <path d="M620 150 L672 118 A62 62 0 0 1 683 139 Z"/>
+      <path d="M620 150 L609 212 A62 62 0 0 1 585 205 Z"/>
+      <path d="M620 150 L559 141 A62 62 0 0 1 572 119 Z"/>
+    </g>
+    <circle class="out" cx="620" cy="150" r="26" fill="#E9ECE9"/>
+    <!-- detent -->
+    <circle class="hvline" cx="620" cy="88" r="5" fill="#F4E3AC"/>
+    <line class="lead" x1="620" y1="83" x2="656" y2="58"/>
+    <text class="dim" x="700" y="55" text-anchor="middle">sprung detent</text>
+    <text class="dim" x="620" y="262" text-anchor="middle">lugs trapped behind shoulders · shear-loaded</text>
+  </svg>
+  <div class="note">
+    <b>Why this beats a clamp screw.</b> A tightened joint holds by friction, and engine vibration is very good at walking friction joints loose. Here the lugs sit behind solid shoulders, so load passes through a shear plane instead. The detent stops the twist backing off on rough roads and gives you the click that tells you it's home — the part you'll rely on with gloves on and eyes forward.
+  </div>
+</div>
+
+<!-- ============ SHEET 3 ============ -->
+<div class="sheet">
+  <div class="sheet-hd"><h2>3 — Weather sealing</h2><span class="num">SECTION A–A · ENLARGED</span></div>
+  <svg viewBox="0 0 820 320" role="img" aria-label="Cross section of the sealed enclosure showing gasket, window, vent and cable gland">
+    <defs>
+      <pattern id="hatch" width="7" height="7" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="7" stroke="#5D6A66" stroke-width=".9"/>
+      </pattern>
+    </defs>
+
+    <!-- rear shell -->
+    <path class="out" d="M120 70 L470 70 L470 96 L146 96 L146 224 L470 224 L470 250 L120 250 Z" fill="url(#hatch)"/>
+    <!-- front bezel -->
+    <path class="out" d="M470 62 L520 62 L520 258 L470 258 L470 232 L496 232 L496 88 L470 88 Z" fill="url(#hatch)"/>
+    <!-- window -->
+    <rect class="sealc" x="496" y="88" width="9" height="144" fill="#CFE2E6"/>
+    <line class="lead" x1="505" y1="88" x2="560" y2="52"/>
+    <text class="lbl" x="640" y="48" text-anchor="middle">2 mm POLYCARBONATE</text>
+    <text class="dim" x="640" y="60" text-anchor="middle">bonded from inside — pressure seats it</text>
+
+    <!-- gasket -->
+    <rect class="sealc" x="464" y="62" width="12" height="12" rx="2" fill="#8FC4CC"/>
+    <rect class="sealc" x="464" y="246" width="12" height="12" rx="2" fill="#8FC4CC"/>
+    <line class="lead" x1="464" y1="68" x2="404" y2="34"/>
+    <text class="lbl" x="330" y="30" text-anchor="middle">FORM-IN-PLACE GASKET</text>
+    <text class="dim" x="330" y="42" text-anchor="middle">2 × 1.5 groove filled with RTV, cured closed</text>
+
+    <!-- display + pcb stack -->
+    <rect class="thin" x="440" y="100" width="12" height="120" fill="#B9C3C8"/>
+    <rect class="thin" x="392" y="118" width="10" height="84" fill="#C6CEC9"/>
+    <text class="dim" x="446" y="238" text-anchor="middle">TFT</text>
+    <text class="dim" x="380" y="238" text-anchor="middle">ESP32</text>
+
+    <!-- boss on back -->
+    <rect class="hvline" x="92" y="132" width="28" height="56" rx="3" fill="#F4E3AC"/>
+    <text class="lbl" x="64" y="164" text-anchor="middle">BOSS</text>
+
+    <!-- vent -->
+    <circle class="sealc" cx="300" cy="250" r="7" fill="#8FC4CC"/>
+    <line class="lead" x1="300" y1="257" x2="300" y2="292"/>
+    <text class="lbl" x="300" y="304" text-anchor="middle">ePTFE PRESSURE VENT — Ø3</text>
+
+    <!-- gland -->
+    <rect class="sealc" x="196" y="244" width="30" height="16" rx="3" fill="#8FC4CC"/>
+    <path class="thin" d="M211 260 q0 30 -34 36"/>
+    <line class="lead" x1="196" y1="252" x2="150" y2="286"/>
+    <text class="lbl" x="120" y="298" text-anchor="middle">M8 GLAND</text>
+
+    <!-- blind boss -->
+    <rect class="thin" x="150" y="104" width="16" height="18" fill="#CFD6D1"/>
+    <line class="lead" x1="166" y1="108" x2="212" y2="86"/>
+    <text class="dim" x="268" y="82" text-anchor="middle">blind boss + heat-set insert</text>
+    <text class="dim" x="268" y="93" text-anchor="middle">screws never breach the volume</text>
+
+    <!-- title block -->
+    <rect class="out" x="648" y="216" width="150" height="86" fill="#DDE2DE"/>
+    <line class="thin" x1="648" y1="242" x2="798" y2="242"/>
+    <line class="thin" x1="648" y1="268" x2="798" y2="268"/>
+    <line class="thin" x1="723" y1="268" x2="723" y2="302"/>
+    <text class="ttl" x="656" y="234">ENCLOSURE</text>
+    <text class="dim" x="656" y="260">JT-NAV-200</text>
+    <text class="dim" x="656" y="286">MATL</text>
+    <text class="dim" x="656" y="297">PETG</text>
+    <text class="dim" x="731" y="286">REV</text>
+    <text class="dim" x="731" y="297">A</text>
+  </svg>
+  <div class="note">
+    <b>The vent is the part people leave out.</b> Parked in the sun the internal air reaches 60&nbsp;°C+; hit it with rain and the air contracts, pulling water past the gasket. A Ø3 hole covered with ePTFE from the inside breathes air and blocks liquid. Without it you get condensation on the window within a month no matter how good the seal is.
+  </div>
+</div>
+
+</div>
+</body>
+</html>
