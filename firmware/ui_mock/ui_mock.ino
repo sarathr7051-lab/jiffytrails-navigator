@@ -80,7 +80,8 @@ static const uint8_t N_LEGS = sizeof(RIDE) / sizeof(RIDE[0]);
 static uint8_t  leg       = 0;
 static int32_t  dist_m    = 700;
 static int32_t  route_m   = 8400;      // progressMax, drifts like the real thing
-static int32_t  travelled = 0;
+static int32_t  travelled = 1200;      // start mid-route so the traffic bar
+                                       // shows a travelled segment immediately
 static UiState  state     = ST_NAV;
 static bool     paused    = false;
 static uint32_t lastTick  = 0;
@@ -90,6 +91,15 @@ static int32_t  lastDist  = -1;
 
 // 15 m/s is about 54 km/h - a fair Bengaluru mix of arterial and crawling.
 static const int32_t SPEED_MPS = 15;
+
+// Screen is split into two columns: maneuver on the left, distance on the
+// right. The distance sprite is opaque, so anything drawn left of it must
+// stay clear of SPR_X or it gets painted over on the next tick - which is
+// exactly what chopped the arrow in half the first time round.
+static const int16_t SPR_X = 136;   // sprite left edge
+static const int16_t SPR_W = 184;   // 136 + 184 = 320, runs to the edge
+static const int16_t SPR_H = 80;    // font 8 is 75 px tall
+static const int16_t ARROW_MAX_X = SPR_X - 4;   // arrows must end before this
 
 // --------------------------------------------------------------- helpers
 
@@ -212,15 +222,15 @@ static void pushDistance(int32_t m, int x, int y, uint16_t fg, uint16_t bg) {
   if (m > 1000) {
     snprintf(buf, sizeof(buf), "%ld.%ld", (long)(m / 1000), (long)((m % 1000) / 100));
     dist.setTextDatum(MR_DATUM);
-    dist.drawString(buf, 150, 40, 6);
+    dist.drawString(buf, 146, 40, 6);
     dist.setTextDatum(ML_DATUM);
-    dist.drawString("km", 156, 50, 4);
+    dist.drawString("km", 152, 50, 4);
   } else {
     snprintf(buf, sizeof(buf), "%ld", (long)m);
     dist.setTextDatum(MR_DATUM);
-    dist.drawString(buf, 150, 40, 8);
+    dist.drawString(buf, 146, 40, 8);
     dist.setTextDatum(ML_DATUM);
-    dist.drawString("m", 156, 56, 4);
+    dist.drawString("m", 152, 56, 4);
   }
   dist.pushSprite(x, y);
 }
@@ -237,7 +247,7 @@ static void drawChrome(uint8_t band) {
   if (band == 3) {
     // Inverted below 30 m. A change of state you cannot miss at a junction.
     tft.fillScreen(TFT_BLACK);
-    drawManeuver(66, 120, 58, RIDE[leg].mv, TFT_WHITE, TFT_BLACK);
+    drawManeuver(54, 128, 46, RIDE[leg].mv, TFT_WHITE, TFT_BLACK);
     return;
   }
 
@@ -247,7 +257,7 @@ static void drawChrome(uint8_t band) {
   if (band == 0) {
     tft.setTextDatum(TL_DATUM);
     tft.drawString(RIDE[leg].road, 8, 6, 4);
-    drawManeuver(44, 130, 30, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(40, 122, 30, RIDE[leg].mv, C_FG, C_BG);
 
     tft.setTextColor(C_MUTED, C_BG);
     tft.setTextDatum(BL_DATUM);
@@ -261,9 +271,9 @@ static void drawChrome(uint8_t band) {
   } else if (band == 1) {
     tft.setTextDatum(TL_DATUM);
     tft.drawString(RIDE[leg].road, 8, 4, 4);
-    drawManeuver(50, 145, 42, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(50, 140, 42, RIDE[leg].mv, C_FG, C_BG);
   } else if (band == 2) {
-    drawManeuver(66, 120, 58, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(54, 128, 46, RIDE[leg].mv, C_FG, C_BG);
   }
 }
 
@@ -305,9 +315,9 @@ static void render() {
   if (q == lastDist) return;
   lastDist = q;
 
-  if (band == 3) pushDistance(q, 96, 88, TFT_WHITE, TFT_BLACK);
-  else if (band == 0) pushDistance(q, 96, 58, C_FG, C_BG);
-  else pushDistance(q, 96, 88, C_FG, C_BG);
+  if (band == 3)      pushDistance(q, SPR_X, 88, TFT_WHITE, TFT_BLACK);
+  else if (band == 0) pushDistance(q, SPR_X, 60, C_FG, C_BG);
+  else                pushDistance(q, SPR_X, 88, C_FG, C_BG);
 }
 
 // ---------------------------------------------------------------- script
@@ -357,7 +367,7 @@ void setup() {
   tft.fillScreen(C_BG);
 
   dist.setColorDepth(16);
-  if (!dist.createSprite(200, 80)) {
+  if (!dist.createSprite(SPR_W, SPR_H)) {
     Serial.println(F("sprite alloc FAILED - reduce size"));
   }
 
