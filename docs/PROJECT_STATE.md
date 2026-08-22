@@ -59,14 +59,16 @@ has a built-in CH340 driver, so no install is needed. Time was wasted installing
 the Silicon Labs CP210x driver for nothing. Board enumerates as
 **USB-SERIAL CH340 (COM10)**.
 
-**2. The display module has an onboard AMS1117 regulator and needs 5V on VCC
-and LED.** Confirmed by a visible 3-legged SOT-23 chip near VCC, and by the
-vendor manual which shows VCC → 5V and LED → 5V. At 3.3V input the regulator's
-~1.1V dropout leaves ~2.2V and the panel stays completely dark. Signal lines
-stay at 3.3V logic — the module has level shifters.
+**2. ~~The display module needs 5V on VCC and LED.~~ WRONG — corrected
+22 Aug 2026.** The module does carry an AMS1117, and the vendor manual does
+show 5V, but **the working build runs VCC and LED on the LOLIN32 `3V` pin** and
+the panel is bright and fully functional. The dropout theory was never tested;
+the dark panel had other causes (wrong config file, wrong init sequence — §9).
 
-**This also simplifies the final build:** the bike's USB gives 5V, which feeds
-both the ESP32 and the display directly.
+**Open question for the sunlight test:** driving LED from 3.3V rather than 5V
+means the backlight is running below its rated brightness. If the noon-sun test
+is marginal, feeding LED from a 5V source (USB VBUS on the bike) is the first
+thing to try before concluding the display class is wrong.
 
 ---
 
@@ -74,7 +76,7 @@ both the ESP32 and the display directly.
 
 | Display | LOLIN32 | Note |
 |---|---|---|
-| **VCC** | **5V** | NOT 3.3V — see above |
+| **VCC** | **`3V`** | 3.3V verified working — the earlier "needs 5V" note was wrong |
 | GND | `G` | |
 | CS | 15 | |
 | RESET | **16** | **NOT 4** — GPIO4 isn't broken out on LOLIN32 |
@@ -82,7 +84,7 @@ both the ESP32 and the display directly.
 | SDI (MOSI) | 23 | |
 | SCK | 18 | |
 | SDO (MISO) | 19 | |
-| **LED** | **5V** | backlight |
+| **LED** | **`3V`** | backlight, lit and working; see brightness caveat in §2 |
 
 If the module has T_CS / T_CLK / T_DIN / T_DO / T_IRQ, leave unconnected except
 **T_CS → 3.3V** so the touch controller stays off the shared SPI bus.
@@ -383,40 +385,41 @@ A friend is buying a 3D printer. **Ask for a tolerance test** — a plate with
   at `C:\dev\NavDump`, Android Studio Quail 3)
 - **Stage 2: data gate PASSED** — two rides logged and fully analysed (§4)
 - **Stage 3: ESP32 alive** — Arduino IDE 2.3.10, esp32 core 3.3.11, blink
-  uploaded and verified. Serial reports: ESP32-D0WDQ6-V3 rev 3.1, dual core,
-  240 MHz, MAC 2c:bc:bb:92:48:3c
+  uploaded and verified (GPIO 22, not 5). Serial reports: ESP32-D0WDQ6-V3
+  rev 3.1, dual core, 240 MHz, MAC 2c:bc:bb:92:48:3c
+- ESP32 headers soldered, every adjacent pair continuity-tested, no bridges
+- **Stage 4: DISPLAY WORKING — 22 Aug 2026.** `TFT_graphicstest_one_lib`
+  renders graphics and text correctly through all rotations on breadboard.
 
-**★★ CURRENT BLOCKER — Stage 4, display**
+**What actually fixed the display** (three sessions of white screen):
 
-The display shows **no backlight at all**. Two candidate causes, not yet
-separated:
+1. **The edits were going to a file that was never compiled.** The sketchbook
+   is `C:\dev\Arduino`, but a second stale TFT_eSPI sits under OneDrive's
+   Documents folder — which on this machine is localized to Japanese and named
+   `ドキュメント`. `%USERPROFILE%\Documents` has no Arduino folder at all, so
+   every path that looked like "Documents\Arduino\libraries" led to the dead
+   copy. Two correct fixes had already been made and had simply never reached
+   the compiler.
+2. **`ILI9341_2_DRIVER` instead of `ILI9341_DRIVER`** — alternative init
+   sequence, TFT_eSPI issue 1172. Same chip ID, so Read_User_Setup reports
+   `9341` either way.
+3. **SPI_FREQUENCY 27 MHz instead of 40 MHz** — breadboard and Dupont jumpers.
 
-1. **Power rail.** Module has an AMS1117 and wants 5V, but the LOLIN32 does not
-   break out 5V to any header pin. The `+` next to the white connector is the
-   JST battery terminal (3.7–4.2 V, only live with a battery or during
-   charging), not USB 5V.
-2. **Contact.** The ESP32's headers are **unsoldered**, so `3V` and `G` may be
-   making no contact at all. USB upload works because that path doesn't touch
-   the headers.
-
-**Options for 5V:** solder a wire to the USB-C **VBUS** pad, or power the
-display from a separate USB source (phone charger + cut cable) sharing a common
-ground with the ESP32. The latter needs no soldering and would isolate cause 1
-from cause 2 immediately.
-
-**Both paths converge on: solder the ESP32 headers.**
+Full detail and the verification procedure in `docs/HARDWARE.md`.
 
 **NEXT ACTIONS**
-1. Get ESP32 headers soldered — Chandan Electronics, Kammanahalli (WhatsApp
-   first, ~₹50, 5 min) or a ₹550–900 60W adjustable kit
-2. Buy a **multimeter** (~₹500) — the guessing about whether voltage reaches a
-   pin has to stop
-3. Buy **digital calipers** (~₹400) — every enclosure dimension depends on them
-4. Solve 5V, wire the display, run `Read_User_Setup` then
-   `TFT_graphicstest_one_lib`
-5. **★ THE SUNLIGHT TEST** — black on white, biggest font, outdoors 12:00–14:00
+1. **★ THE SUNLIGHT TEST** — black on white, biggest font, outdoors 12:00–14:00.
+   This is the live gate and nothing else should be built until it passes.
+2. Reflow the blobby header joints — they pass continuity but several were made
+   with a poorly tinned tip and may be cold. Vibration will find them.
+3. Measure the 3V rail under load with the backlight lit (DCV 20, G to 3V).
+   Not urgent now that the panel works, but needed before the enclosure design
+   assumes the LDO can carry it.
+4. Retest at 40 MHz once the build is soldered rather than breadboarded.
+5. Then: BLE peripheral (§5) and the firmware structure in
+   `firmware/navigator/README.md`.
 
-**Gate at step 5.** Readable → proceed. Marginal → anti-glare film + sunshade
+**Gate at step 1.** Readable → proceed. Marginal → anti-glare film + sunshade
 hood, and the helmet headset becomes more valuable. Unreadable → display class
 changes and the budget breaks (transflective Sharp Memory LCD is ₹3,000+).
 
@@ -469,7 +472,8 @@ adb exec-out run-as com.jiffytrails.navdump cat <path> > navdump.log
   with "unable to open ftdi device" and that's expected.
 - **Don't chase the onboard LED pin.** GPIO 5 didn't visibly work; the upload
   log ("Hash of data verified") is the real proof of success.
-- **Don't wire display VCC to 3.3V.** AMS1117 dropout leaves ~2.2V, panel dark.
+- ~~**Don't wire display VCC to 3.3V.**~~ **Wrong** — 3.3V works fine. The dark
+  panel was a config problem, not a power problem. See §9.
 - **Don't add the 10K series resistors** from the vendor manual — those are for
   a 5V Arduino.
 - **Don't build a wrong-way warning from rising distance.** GPS jitter at

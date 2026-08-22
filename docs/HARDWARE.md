@@ -18,6 +18,9 @@ battery. Reasons in PROJECT_STATE.md.
 
 ## Pin mapping
 
+**Status: VERIFIED WORKING 22 Aug 2026.** `TFT_graphicstest_one_lib` renders
+correctly through all rotations on this wiring.
+
 | Display | LOLIN32 |
 |---|---|
 | VCC | 3V |
@@ -51,6 +54,19 @@ has a built-in driver; no install needed.
 If the module exposes touch pins, leave them unconnected except **T_CS → 3.3 V**
 so the touch controller stays off the shared SPI bus.
 
+**This panel needs `ILI9341_2_DRIVER`, not `ILI9341_DRIVER`.** Same chip ID,
+different init sequence ([TFT_eSPI issue 1172][1172]). Under the stock
+`ILI9341_DRIVER` this display gave flat white, then vertical stripes once the
+pins were corrected — the controller was receiving SPI but never initialising.
+The alternative sequence brought it up first try. A second panel from a
+different batch may want the other one; try both before assuming a fault.
+
+[1172]: https://github.com/Bodmer/TFT_eSPI/issues/1172
+
+**Run the bus at 27 MHz on breadboard**, not the 40 MHz default. Dupont jumpers
+and an MB102 do not hold 40 MHz cleanly. Worth raising again once the build is
+soldered — but retest, do not assume.
+
 ## Toolchain
 
 Arduino IDE 2.x **from arduino.cc** — not the Microsoft Store build, which is
@@ -63,13 +79,40 @@ https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32
 
 Board: **WEMOS LOLIN32**.
 
-Keep the sketchbook out of OneDrive and out of paths with non-ASCII characters —
-cloud placeholder files cause the compiler to fail to find libraries the IDE can
-otherwise see.
+### Sketchbook location — read this before editing any config
 
-`firmware/navigator/User_Setup.h` goes into
-`<sketchbook>/libraries/TFT_eSPI/`. **Restart the IDE after editing it** — the
-config is cached.
+**The sketchbook on this machine is `C:\dev\Arduino`.** The live TFT_eSPI
+config is therefore:
+
+```
+C:\dev\Arduino\libraries\TFT_eSPI\User_Setup.h
+```
+
+That is authoritative, not a guess — it is `directories.user` in
+`C:\Users\sarat\.arduinoIDE\arduino-cli.yaml`. **Check that file rather than
+trusting an assumed Documents path.**
+
+**The trap that cost a full session:** OneDrive's Documents folder here is
+localized to Japanese and is literally named `ドキュメント`. A second, stale
+TFT_eSPI lives at
+
+```
+C:\Users\sarat\OneDrive\ドキュメント\Arduino\libraries\TFT_eSPI\
+```
+
+`%USERPROFILE%\Documents` contains no Arduino folder at all, so anything
+reasoning about "Documents\Arduino\libraries" lands on the OneDrive copy — which
+is never compiled. Every edit went there and changed nothing, which made two
+correct fixes look like failures. **That copy is dead. Do not edit it.** Delete
+it if you want the trap gone for good.
+
+`firmware/navigator/User_Setup.h` in this repo is a reference copy; keep it in
+sync with the live file by hand.
+
+**Always confirm an edit landed before drawing conclusions from it.** Run
+Read_User_Setup and check a value you know you changed. Note that swapping
+`ILI9341_DRIVER` for `ILI9341_2_DRIVER` does *not* change the printed driver ID
+— both report `9341`. Verify against `Display SPI frequency` or a pin instead.
 
 ## Mount
 

@@ -10,7 +10,8 @@
 #define USER_SETUP_INFO "LOLIN32 ILI9341 2.8in"
 
 // ---------- Driver ----------
-#define ILI9341_DRIVER
+//#define ILI9341_DRIVER
+#define ILI9341_2_DRIVER   // alt init seq, TFT_eSPI issue 1172
 
 // ---------- Pins ----------
 // NOTE: TFT_RST is 16, not 4. GPIO4 is not broken out on the
@@ -40,5 +41,5 @@
 
 // ---------- SPI ----------
 // Reads are less tolerant than writes, hence the lower read clock.
-#define SPI_FREQUENCY       40000000
+#define SPI_FREQUENCY       27000000
 #define SPI_READ_FREQUENCY  20000000
