@@ -390,6 +390,11 @@ A friend is buying a 3D printer. **Ask for a tolerance test** — a plate with
 - ESP32 headers soldered, every adjacent pair continuity-tested, no bridges
 - **Stage 4: DISPLAY WORKING — 22 Aug 2026.** `TFT_graphicstest_one_lib`
   renders graphics and text correctly through all rotations on breadboard.
+- **Nav interface built and validated on hardware — 22 Aug 2026.**
+  `firmware/ui_mock/ui_mock.ino` renders the real UI from a scripted ride, no
+  BLE. All four distance bands, the inverted sub-30 m screen, the idle screen,
+  and REROUTING / STALE / DISCONNECTED. Confirmed on the panel with no
+  clipping. Its drawing code is the basis for `display.cpp`.
 
 **What actually fixed the display** (three sessions of white screen):
 

@@ -104,6 +104,24 @@ https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32
 
 Board: **WEMOS LOLIN32**.
 
+### Upload from the Arduino IDE, not the command line
+
+Sketches flashed with `arduino-cli` reported a clean write and verified hash,
+the sketch ran and printed to serial — and the panel stayed white. The same
+sketch uploaded through the IDE worked immediately, with nothing physical
+changed in between. The board options are identical between the two
+(`CPUFreq=240`, `FlashFreq=80`, same partition scheme), so the cause is not
+board configuration and has not been pinned down.
+
+Probable culprit: opening the serial port from a script toggles DTR/RTS, which
+on this board drives the auto-reset circuit (EN and GPIO 0). That can leave the
+ESP32 held in reset or sitting in download mode — the sketch is in flash and
+appears fine, but nothing drives the display.
+
+**Practical rule: upload through the IDE, and don't open COM11 from a script
+while debugging the display.** An hour was lost to this, chasing a wiring fault
+that did not exist.
+
 ### Sketchbook location — read this before editing any config
 
 **The sketchbook on this machine is `C:\dev\Arduino`.** The live TFT_eSPI
