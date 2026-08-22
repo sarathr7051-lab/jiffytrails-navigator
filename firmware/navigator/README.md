@@ -68,3 +68,9 @@ of the flash.
 states so daylight readability can be judged against the actual design rather
 than the library graphics test, which draws thin coloured lines on black and is
 close to a worst case.
+
+`../ui_mock/ui_mock.ino` — the nav interface driven by a scripted ride, no BLE.
+Distances count down at 1 Hz with the real Google Maps quantisation, maneuvers
+change, and every failure state fires on a timer. Serial keys jump straight to
+any state. This is where the interface gets finalised before BLE work starts;
+its drawing code becomes `display.cpp`.

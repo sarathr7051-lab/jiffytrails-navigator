@@ -416,9 +416,10 @@ Full detail and the verification procedure in `docs/HARDWARE.md`.
    marginal, retry with LED on 5V before concluding the display class is wrong.
 2. Reflow the blobby header joints — they pass continuity but several were made
    with a poorly tinned tip and may be cold. Vibration will find them.
-3. Measure the 3V rail under load with the backlight lit (DCV 20, G to 3V).
-   Not urgent now that the panel works, but needed before the enclosure design
-   assumes the LDO can carry it.
+3. ~~Measure the 3V rail under load.~~ **Done — 3.18 V** with the backlight lit.
+   Healthy. Feeds into the backlight-control note in HARDWARE.md: LED needs a
+   MOSFET and a PWM pin before Stage 9 auto-dim or the "dim on STALE" display
+   rule can work, and that has to be decided **before Stage 11 soldering**.
 4. Retest at 40 MHz once the build is soldered rather than breadboarded.
 5. Then: BLE peripheral (§5) and the firmware structure in
    `firmware/navigator/README.md`.

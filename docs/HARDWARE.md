@@ -43,7 +43,32 @@ and 5 V on VCC — that is for a 5 V Arduino. The ESP32 is natively 3.3 V; wire
 straight through.
 
 **3.3 V is sufficient** despite the module carrying an AMS1117 regulator.
-Verified.
+Verified on the bench: **3.18 V measured at the `3V` pin with the backlight
+lit** (22 Aug 2026, DT-830D on DCV 20). A 4 % droop off nominal — fine, but
+that is the LDO working rather than coasting. Re-measure if anything else is
+ever added to the 3.3 V rail.
+
+### ★ Backlight control is not wired for, and it needs to be
+
+`LED` is tied straight to `3V`. The backlight is therefore always on at full
+brightness, which blocks two things already in the plan:
+
+- **"Dim screen on STALE"** (`BLE_PROTOCOL.md` display rules) — needs PWM.
+- **Stage 9 auto-dim** via LDR or BH1750 — needs PWM.
+
+`User_Setup.h` already reserves `TFT_BL 17` and `TFT_BACKLIGHT_ON HIGH`,
+commented out, for when this changes.
+
+**Do not simply move the LED wire to GPIO 17.** A 2.8" ILI9341 backlight draws
+roughly 60–100 mA. An ESP32 pin is rated 40 mA absolute maximum and ~12 mA for
+comfort, so driving it directly would be somewhere between unreliable and
+destructive. It needs a low-side switch: an N-channel logic-level MOSFET
+(2N7002 for the low end of that current, AO3400 with margin) or an NPN such as
+BC337, with the GPIO into the gate/base and the backlight cathode into the
+drain/collector.
+
+Cost is a few rupees. **Decide this before soldering to perfboard in Stage 11**
+— retrofitting it into a sealed enclosure is the bad version of this job.
 
 **The `+` beside the white connector is the LiPo JST terminal**, not a 5 V
 header pin. `VP` and `VN` are GPIO 36 and 39, analog inputs — not power.
