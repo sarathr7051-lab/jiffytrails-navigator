@@ -92,14 +92,22 @@ static int32_t  lastDist  = -1;
 // 15 m/s is about 54 km/h - a fair Bengaluru mix of arterial and crawling.
 static const int32_t SPEED_MPS = 15;
 
-// Screen is split into two columns: maneuver on the left, distance on the
-// right. The distance sprite is opaque, so anything drawn left of it must
-// stay clear of SPR_X or it gets painted over on the next tick - which is
-// exactly what chopped the arrow in half the first time round.
-static const int16_t SPR_X = 136;   // sprite left edge
-static const int16_t SPR_W = 184;   // 136 + 184 = 320, runs to the edge
+// Screen is two columns: maneuver on the left, distance on the right.
+//
+// Sizing these by eye failed twice, so the real numbers, from the library's
+// own width tables:
+//
+//   font 8  digits 55 px wide, 75 tall  ->  "700" is 165 px
+//   font 6  digits 27 px wide, 48 tall  ->  "1.2" is  69 px
+//   font 4  'm' 22 px, "km" 34 px, 26 tall
+//
+// 165 + 34 + padding is most of the screen, which leaves the arrow about
+// 104 px. The sprite is opaque, so anything drawn to its left must stay
+// inside ARROW_ZONE or it gets painted over on the next tick.
+static const int16_t SPR_X = 112;   // sprite left edge
+static const int16_t SPR_W = 208;   // 112 + 208 = 320, flush to the edge
 static const int16_t SPR_H = 80;    // font 8 is 75 px tall
-static const int16_t ARROW_MAX_X = SPR_X - 4;   // arrows must end before this
+static const int16_t ARROW_ZONE = SPR_X - 4;
 
 // --------------------------------------------------------------- helpers
 
@@ -124,77 +132,92 @@ static uint8_t bandOf(int32_t m) {
 // ------------------------------------------------------------- maneuvers
 
 // Vector paths, not bitmaps - scalable and a fraction of the flash.
-static void drawManeuver(int cx, int cy, int s, uint8_t mv, uint16_t fg, uint16_t bg) {
-  const int t = s / 3;
-  const int h = s * 2 / 3;
+//
+// Every glyph is expressed as percentages of an s-by-s box whose top-left is
+// (x, y), so no glyph can escape its box no matter which maneuver it is.
+// The previous version took a centre point and grew the turn head to one
+// side, which made the real extent depend on which way the arrow pointed -
+// a right turn overran to the right, a left turn overran to the left, and
+// the layout could not reserve space for both. Layout now reserves one box
+// and the glyph is guaranteed to fit inside it.
+static void drawManeuver(int x, int y, int s, uint8_t mv, uint16_t fg, uint16_t bg) {
+  auto P = [&](int pct) { return (int)((long)pct * s / 100); };
+  auto X = [&](int pct) { return x + P(pct); };
+  auto Y = [&](int pct) { return y + P(pct); };
+
+  // A stroke of thickness P(w) from one point to another, for the diagonals.
+  auto thickLine = [&](int x0, int y0, int x1, int y1, int w) {
+    for (int i = -w / 2; i <= w / 2; i++) tft.drawLine(x0 + i, y0, x1 + i, y1, fg);
+  };
 
   switch (mv) {
     case MV_CONTINUE:
-      tft.fillRect(cx - t / 2, cy - s / 2, t, s, fg);
-      tft.fillTriangle(cx - h, cy - s / 2, cx + h, cy - s / 2, cx, cy - s / 2 - h, fg);
+      tft.fillRect(X(42), Y(35), P(16), P(60), fg);
+      tft.fillTriangle(X(24), Y(40), X(76), Y(40), X(50), Y(6), fg);
+      break;
+
+    case MV_RIGHT:
+      tft.fillRect(X(24), Y(46), P(15), P(50), fg);            // stem
+      tft.fillRect(X(24), Y(46), P(44), P(15), fg);            // elbow
+      tft.fillTriangle(X(62), Y(28), X(62), Y(79), X(96), Y(53), fg);
       break;
 
     case MV_LEFT:
-    case MV_RIGHT: {
-      const int sgn = (mv == MV_RIGHT) ? 1 : -1;
-      tft.fillRect(cx - t / 2, cy - t / 2, t, s, fg);
-      if (sgn > 0) tft.fillRect(cx - t / 2, cy - t / 2, s + t / 2, t, fg);
-      else         tft.fillRect(cx - s, cy - t / 2, s + t / 2, t, fg);
-      const int hx = cx + sgn * s;
-      tft.fillTriangle(hx, cy - t / 2 - h, hx, cy - t / 2 + h, hx + sgn * h, cy, fg);
+      tft.fillRect(X(61), Y(46), P(15), P(50), fg);
+      tft.fillRect(X(32), Y(46), P(44), P(15), fg);
+      tft.fillTriangle(X(38), Y(28), X(38), Y(79), X(4), Y(53), fg);
       break;
-    }
+
+    case MV_SLIGHT_RIGHT:
+      tft.fillRect(X(42), Y(58), P(15), P(38), fg);
+      thickLine(X(50), Y(62), X(74), Y(34), P(15));
+      tft.fillTriangle(X(88), Y(14), X(58), Y(24), X(78), Y(48), fg);
+      break;
 
     case MV_SLIGHT_LEFT:
-    case MV_SLIGHT_RIGHT: {
-      const int sgn = (mv == MV_SLIGHT_RIGHT) ? 1 : -1;
-      tft.fillRect(cx - t / 2, cy, t, s / 2, fg);
-      const int ex = cx + sgn * s * 3 / 4;
-      const int ey = cy - s * 3 / 4;
-      for (int i = -t / 2; i <= t / 2; i++) tft.drawLine(cx + i, cy, ex + i, ey, fg);
-      tft.fillTriangle(ex - sgn * h / 2, ey - h / 3, ex + sgn * h / 2, ey + h / 2,
-                       ex + sgn * h / 3, ey - h, fg);
+      tft.fillRect(X(43), Y(58), P(15), P(38), fg);
+      thickLine(X(50), Y(62), X(26), Y(34), P(15));
+      tft.fillTriangle(X(12), Y(14), X(42), Y(24), X(22), Y(48), fg);
       break;
-    }
 
     case MV_UTURN: {
-      const int r = s / 2;
-      for (int i = 0; i < t / 2; i++) tft.drawCircle(cx, cy - s / 4, r - i, fg);
-      tft.fillRect(cx - r - t / 4, cy - s / 4, t / 2, s / 2, fg);   // left leg down
-      tft.fillRect(cx + r - t / 4, cy - s / 4, t / 2, s / 3, fg);   // right leg down
-      tft.fillRect(cx - r, cy - s / 4 + 1, 2 * r, s, bg);           // clip lower arc
-      tft.fillRect(cx - r - t / 4, cy - s / 4, t / 2, s / 2, fg);
-      tft.fillTriangle(cx + r - h / 2, cy + s / 4, cx + r + h / 2, cy + s / 4,
-                       cx + r, cy + s / 4 + h, fg);
+      // Arc drawn as overlapping dots rather than stacked circle outlines
+      // with the lower half erased - erasing clipped the legs.
+      const int cx = X(50), cy = Y(42), r = P(22), t = P(7);
+      for (int i = 0; i <= 24; i++) {
+        const float a = 3.14159265f * i / 24.0f;
+        tft.fillCircle(cx - (int)(r * cosf(a)), cy - (int)(r * sinf(a)), t, fg);
+      }
+      tft.fillRect(X(21), Y(42), P(14), P(54), fg);             // left leg, down
+      tft.fillRect(X(65), Y(42), P(14), P(22), fg);             // right leg, short
+      tft.fillTriangle(X(58), Y(60), X(86), Y(60), X(72), Y(92), fg);
       break;
     }
 
     case MV_MERGE:
-      tft.fillRect(cx - t / 2, cy - s / 2, t, s, fg);
-      tft.fillTriangle(cx - h, cy - s / 2, cx + h, cy - s / 2, cx, cy - s / 2 - h, fg);
-      for (int i = -t / 4; i <= t / 4; i++)
-        tft.drawLine(cx - s / 2 + i, cy + s / 2, cx + i, cy, fg);
+      tft.fillRect(X(42), Y(30), P(15), P(66), fg);
+      tft.fillTriangle(X(25), Y(34), X(75), Y(34), X(50), Y(4), fg);
+      thickLine(X(16), Y(94), X(44), Y(64), P(11));
       break;
 
     case MV_ROUNDABOUT: {
-      const int r = s / 2;
-      for (int i = 0; i < t / 2; i++) tft.drawCircle(cx, cy, r - i, fg);
-      tft.fillRect(cx - t / 4, cy + r, t / 2, s / 2, fg);          // entry, below
-      tft.fillRect(cx + r, cy - t / 4, s / 2, t / 2, fg);          // exit, right
-      tft.fillTriangle(cx + r + s / 2, cy - h / 2, cx + r + s / 2, cy + h / 2,
-                       cx + r + s / 2 + h / 2, cy, fg);
+      const int cx = X(45), cy = Y(44), r = P(24);
+      for (int k = 0; k < P(10); k++) tft.drawCircle(cx, cy, r - k, fg);
+      tft.fillRect(X(40), Y(66), P(10), P(30), fg);             // entry, below
+      tft.fillRect(X(67), Y(39), P(18), P(10), fg);             // exit, right
+      tft.fillTriangle(X(82), Y(32), X(82), Y(56), X(97), Y(44), fg);
       break;
     }
 
     case MV_DESTINATION:
-      tft.fillRect(cx - t / 4, cy - s / 2, t / 2, s, fg);          // flagpole
-      tft.fillTriangle(cx, cy - s / 2, cx + s * 2 / 3, cy - s / 4, cx, cy, fg);
+      tft.fillRect(X(28), Y(10), P(8), P(84), fg);              // pole
+      tft.fillTriangle(X(36), Y(12), X(82), Y(30), X(36), Y(48), fg);
       break;
 
     default:  // MV_UNKNOWN - never guess an arrow, say so instead
       tft.setTextDatum(MC_DATUM);
       tft.setTextColor(fg, bg);
-      tft.drawString("?", cx, cy, 8);
+      tft.drawString("?", X(50), Y(50), 6);
       break;
   }
 }
@@ -218,20 +241,29 @@ static void pushDistance(int32_t m, int x, int y, uint16_t fg, uint16_t bg) {
   dist.fillSprite(bg);
   dist.setTextColor(fg, bg);
 
-  char buf[12];
+  char num[10];
+  const char* unit;
+  uint8_t numFont;
+
   if (m > 1000) {
-    snprintf(buf, sizeof(buf), "%ld.%ld", (long)(m / 1000), (long)((m % 1000) / 100));
-    dist.setTextDatum(MR_DATUM);
-    dist.drawString(buf, 146, 40, 6);
-    dist.setTextDatum(ML_DATUM);
-    dist.drawString("km", 152, 50, 4);
+    snprintf(num, sizeof(num), "%ld.%ld", (long)(m / 1000), (long)((m % 1000) / 100));
+    unit = "km"; numFont = 6;
   } else {
-    snprintf(buf, sizeof(buf), "%ld", (long)m);
-    dist.setTextDatum(MR_DATUM);
-    dist.drawString(buf, 146, 40, 8);
-    dist.setTextDatum(ML_DATUM);
-    dist.drawString("m", 152, 56, 4);
+    snprintf(num, sizeof(num), "%ld", (long)m);
+    unit = "m";  numFont = 8;
   }
+
+  // Right-align the whole block against the sprite's right edge and let it
+  // grow leftwards, measuring rather than assuming. Hard-coding an origin is
+  // what clipped the leading digit: "700" at font 8 is 165 px, and anything
+  // narrower than that silently loses characters off the left.
+  const int16_t pad   = 8;
+  const int16_t unitW = dist.textWidth(unit, 4);
+
+  dist.setTextDatum(MR_DATUM);
+  dist.drawString(unit, SPR_W - pad, SPR_H / 2 + 16, 4);
+  dist.drawString(num,  SPR_W - pad - unitW - 6, SPR_H / 2, numFont);
+
   dist.pushSprite(x, y);
 }
 
@@ -247,7 +279,7 @@ static void drawChrome(uint8_t band) {
   if (band == 3) {
     // Inverted below 30 m. A change of state you cannot miss at a junction.
     tft.fillScreen(TFT_BLACK);
-    drawManeuver(54, 128, 46, RIDE[leg].mv, TFT_WHITE, TFT_BLACK);
+    drawManeuver(4, 76, 104, RIDE[leg].mv, TFT_WHITE, TFT_BLACK);
     return;
   }
 
@@ -257,7 +289,7 @@ static void drawChrome(uint8_t band) {
   if (band == 0) {
     tft.setTextDatum(TL_DATUM);
     tft.drawString(RIDE[leg].road, 8, 6, 4);
-    drawManeuver(40, 122, 30, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(12, 96, 64, RIDE[leg].mv, C_FG, C_BG);
 
     tft.setTextColor(C_MUTED, C_BG);
     tft.setTextDatum(BL_DATUM);
@@ -271,9 +303,9 @@ static void drawChrome(uint8_t band) {
   } else if (band == 1) {
     tft.setTextDatum(TL_DATUM);
     tft.drawString(RIDE[leg].road, 8, 4, 4);
-    drawManeuver(50, 140, 42, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(8, 92, 92, RIDE[leg].mv, C_FG, C_BG);
   } else if (band == 2) {
-    drawManeuver(54, 128, 46, RIDE[leg].mv, C_FG, C_BG);
+    drawManeuver(4, 76, 104, RIDE[leg].mv, C_FG, C_BG);
   }
 }
 
