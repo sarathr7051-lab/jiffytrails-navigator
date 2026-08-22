@@ -12,10 +12,9 @@ stage N's test passes. Two gates in this plan can change the whole architecture
 
 | | |
 |---|---|
-| Spent | ₹1,468 (Robocraze order 356739) |
-| In transit | ESP32 38-pin, SmartElex 2.8" ILI9341 non-touch, MB102 breadboard, jumper set — ~4 days |
-| Done | USB debugging enabled on phone |
-| Next | Android Studio + NavDump |
+| Spent | ₹1,468 (Robocraze order 356739) + soldering kit and multimeter |
+| Done | Stages 1, 2, 3, and Stage 4 Test A |
+| **Next** | **Stage 4 Test B — the sunlight gate.** Nothing else should be built first |
 
 ---
 
@@ -91,8 +90,10 @@ This is the single most important stage. Everything downstream depends on it.
 day-one failure).
 
 ### Tasks
-1. Arduino IDE or PlatformIO. Board: "ESP32 Dev Module".
-2. Install CP2102 driver if the port doesn't appear.
+1. Arduino IDE 2.x from arduino.cc. Board: **WEMOS LOLIN32** (not "ESP32 Dev
+   Module" — this board has its own entry).
+2. No driver install needed. The USB chip is **CH340**, not CP2102, despite the
+   listing; Windows has a built-in driver. Port was COM10, later COM11.
 3. Blink. Then a sketch printing chip revision, free heap, MAC address.
 
 ### Test
@@ -119,7 +120,7 @@ natively 3.3V. Wire straight through.
 | VCC | 3V3 |
 | GND | GND |
 | CS | GPIO 15 |
-| RESET | GPIO 4 |
+| RESET | GPIO **16** |
 | DC | GPIO 2 |
 | SDI (MOSI) | GPIO 23 |
 | SCK | GPIO 18 |
@@ -127,26 +128,37 @@ natively 3.3V. Wire straight through.
 | LED | 3V3 |
 
 ### Tasks
-1. TFT_eSPI library. Edit `User_Setup.h`: `ILI9341_DRIVER`, the pins above,
-   `SPI_FREQUENCY 40000000`.
+1. TFT_eSPI library. Edit `User_Setup.h` — **the live one**; see the sketchbook
+   section of `HARDWARE.md` first, this is where three sessions were lost.
+   Use `ILI9341_2_DRIVER`, the pins above, and `SPI_FREQUENCY 27000000`.
 2. Run the library's graphics test.
 3. Build a mock nav screen — landscape, black on white, biggest possible
    distance digits, arrow, instruction text.
 4. Try both orientations and both polarities (black-on-white vs white-on-black).
 
-### Test A — function
-Graphics test runs clean. No flicker, no tearing, colours correct. (Inverted
-colours on some panels is a known ILI9341 quirk — one config flag.)
+### Test A — function ✅ PASSED 22 Aug 2026
+`TFT_graphicstest_one_lib` renders graphics and text correctly through all
+rotations. No flicker, colours correct. Took `ILI9341_2_DRIVER` at 27 MHz —
+full story in `HARDWARE.md`.
 
-### Test B — SUNLIGHT ★
-Take it outside between 12:00 and 14:00. Arm's length. Sunglasses on if you
-ride with them. Try direct sun on the screen and shaded.
+### Test B — SUNLIGHT ★ ← YOU ARE HERE
+Flash `firmware/sunlight_test/sunlight_test.ino`. It cycles the six real
+display states, including the two maximum-legibility cases, and prints the
+current screen over serial so photographs can be matched up afterwards.
+
+Take it outside between 12:00 and 14:00. Arm's length — mount height, not
+reading distance. Sunglasses on if you ride with them. Try direct sun falling
+on the screen, and shaded by your body. Power it from a USB power bank.
+
+**Caveat that affects the result:** LED is wired to `3V`, so the backlight is
+running below its rated brightness. If the answer is marginal, drive LED from a
+5V source before concluding anything — see HARDWARE.md.
 
 ### Gate
 - **Readable** → carry on, cost ₹0
-- **Marginal** → matte anti-glare film ₹100 + printed sunshade hood. Note in
-  the project log that the answer was marginal; it raises the value of voice
-  guidance later
+- **Marginal** → first retry with LED on 5V. Still marginal → matte anti-glare
+  film ₹100 + printed sunshade hood. Note in the project log that the answer was
+  marginal; it raises the value of voice guidance later
 - **Unreadable in all orientations** → stop. This is the branch that breaks the
   budget. Options: transflective Sharp Memory LCD (₹3,000+, monochrome), or
   accept the device is a shade-and-dusk instrument with voice carrying daylight

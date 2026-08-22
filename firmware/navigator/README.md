@@ -61,3 +61,10 @@ won't fit in plain ESP32 RAM.
 
 Draw maneuver arrows as **vector paths**, not bitmaps — scalable, and a fraction
 of the flash.
+
+## Related sketches
+
+`../sunlight_test/sunlight_test.ino` — Stage 4 Test B. Cycles the six real UI
+states so daylight readability can be judged against the actual design rather
+than the library graphics test, which draws thin coloured lines on black and is
+close to a worst case.

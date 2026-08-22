@@ -408,8 +408,12 @@ A friend is buying a 3D printer. **Ask for a tolerance test** — a plate with
 Full detail and the verification procedure in `docs/HARDWARE.md`.
 
 **NEXT ACTIONS**
-1. **★ THE SUNLIGHT TEST** — black on white, biggest font, outdoors 12:00–14:00.
-   This is the live gate and nothing else should be built until it passes.
+1. **★ THE SUNLIGHT TEST** — outdoors 12:00–14:00. This is the live gate and
+   nothing else should be built until it passes. Flash
+   `firmware/sunlight_test/sunlight_test.ino`, which cycles the six real UI
+   states including two maximum-legibility cases. Power from a USB power bank.
+   Note LED is on 3.3V and therefore below rated brightness — if the result is
+   marginal, retry with LED on 5V before concluding the display class is wrong.
 2. Reflow the blobby header joints — they pass continuity but several were made
    with a poorly tinned tip and may be cold. Vibration will find them.
 3. Measure the 3V rail under load with the backlight lit (DCV 20, G to 3V).
