@@ -152,6 +152,66 @@ independent of all this.
 
 ---
 
+---
+
+## The maker scene — crowded at the demo, empty at the product
+
+**ProntoFPV is a person, not a product.** A Tamil-language Indian tech and drone
+creator, ~19.3K Instagram followers, no company and nothing for sale. His
+"ProNav V2" reel did **1.87 M plays, 66 K likes, 385 comments**, and a helmet
+version ("NavMet P1") followed in Aug 2026. Across five nav posts he has
+published **no price, no shop link, no schematic, and no repo** — and the
+comments are wall-to-wall "price?", "how do I buy this", "code link plz",
+unanswered.
+
+At least four independent people arrived at **this exact architecture** —
+Android notification scraping → BLE → small ESP32 TFT:
+
+| Who | Notes |
+|---|---|
+| [maisonsmd/esp32-google-maps][mai] | Closest match to this build. Notification scraping, LVGL, ESP32-C6. Open source, working. |
+| [appleshaman/CarPlayBLE][cpb] | 181★, GPL-3.0, TTGO T-Display. Abandoned 2024. |
+| u/MuchAssumption6114 | ESP32-C3 + OLED, ships the maneuver **bitmap** rather than classifying it. Repo URL not locatable. |
+| ProntoFPV | Viral, closed, unpublished. |
+
+**Worth a serious look: [fbiego/chronos-esp32][chr]** — 174★, MIT, plus a free
+Android app. The ESP32 presents as a smartwatch over BLE and receives
+notifications, music, phone battery **and turn-by-turn navigation**. It solves
+the entire phone side generically, with an app someone else maintains.
+
+The trade-off is real, though: adopting it means giving up the
+`progressSegments` traffic profile and the parser documented in `NAV_DATA.md`,
+which is the one genuinely novel asset here. Worth evaluating as a fallback if
+maintaining an Android app becomes the thing that kills the project.
+
+### Commercial context for this bike specifically
+
+**Triumph has an official Beeline partnership.** The Triumph-branded Beeline is
+~$279 and explicitly lists the Speed 400 as compatible. Royal Enfield Tripper,
+Blucap Moto and Thork Racing DMD occupy the rest of the slot. Nothing DIY on
+Tindie or Crowd Supply.
+
+### The read that matters
+
+The idea is not novel and the implementation is solved several times over. What
+is conspicuously unsolved is **everything after the demo** — not one of these
+makers ships, sells, or reliably open-sources.
+
+ProntoFPV's 1.87 M views with 385 unanswered "how do I buy this" comments is
+simultaneously proof the demand is real and proof that converting a viral reel
+into a weatherproof, sunlight-readable, mountable object is where everyone
+stalls.
+
+**That stall point is exactly the sunlight gate this project already gates on.**
+The differentiating work here is not the BLE protocol or the notification
+parser — those are commodity. It is the enclosure, the IP rating, and a display
+legible at noon: the three things every project on this list either skips, tapes
+together, or openly admits it has not done.
+
+Relevant to that: [Volos Projects — "ESP32 E-Bike Dashboard You Can See in
+Sunlight"][volos] (May 2026) solves it with an **RLCD**, which is the same
+reflective-display conclusion the brightness research reached independently.
+
 ## What this survey did not change
 
 Our own vector arrow glyphs stay. The two available icon sets
@@ -173,3 +233,7 @@ either uses JSON, which is heavier on BLE, or an undocumented byte layout.
 [frame]: https://github.com/CitizenOneX/gmaps_nav_hud_frame
 [mandrake]: https://github.com/ManDrake-hub/Navigator
 [oal]: https://github.com/mossyhub/openautolink
+[mai]: https://github.com/maisonsmd/esp32-google-maps
+[cpb]: https://github.com/appleshaman/CarPlayBLE
+[chr]: https://github.com/fbiego/chronos-esp32
+[volos]: https://www.youtube.com/watch?v=EKnZ7ZisUj4
