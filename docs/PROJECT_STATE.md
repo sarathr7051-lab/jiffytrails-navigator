@@ -36,6 +36,32 @@ rapid successive junctions.
 **Why build not buy:** the RE Tripper (~₹4,750) plugs into the Royal Enfield
 harness and pairs via the RE app — it won't fit a Triumph, and owners report it
 shows only direction and distance with no ETA. Beeline costs several times more.
+Triumph do sell an official Beeline for this bike at ~$279 — buying is a real
+option and this is being built anyway.
+
+### ★ Scope: personal use only. One device, one rider. Decided 22 Aug 2026.
+
+Nothing here is being sold, shipped, or published as a product. Stated
+explicitly because it settles several questions that would otherwise stay open,
+and future sessions should not relitigate them:
+
+- **Google Play policy is not a constraint.** The restricted-permission review
+  and Device-and-Network-Abuse exposure around `BIND_NOTIFICATION_LISTENER_SERVICE`
+  only bite on distribution. Sideloading onto one phone raises none of it.
+- **Copyleft licences are not a constraint either.** AGPL and GPL obligations
+  attach to distribution. Reading, adapting, or running Gadgetbridge or
+  Chronos code privately triggers nothing. This reopens options `PRIOR_ART.md`
+  had discounted — though repos with **no licence at all** remain legally
+  untouchable regardless, since no rights are granted in the first place.
+- **Parser fragility is an evening's annoyance, not an outage.** Maps' format
+  breaks roughly annually. For one rider that means one evening with NavDump.
+  It would be a fleet-wide failure for a product; it isn't one here.
+- **"Is this novel?" stops being a design input.** Several people have built
+  this. It changes nothing about whether it is worth building for oneself.
+
+What this does **not** relax: the sunlight gate, vibration survival, heat, and
+never displaying a stale maneuver. Those are physics and safety, and they do not
+care how many units exist.
 
 ---
 
