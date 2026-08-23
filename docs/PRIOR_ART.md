@@ -152,8 +152,6 @@ independent of all this.
 
 ---
 
----
-
 ## The maker scene — crowded at the demo, empty at the product
 
 **ProntoFPV is a person, not a product.** A Tamil-language Indian tech and drone
