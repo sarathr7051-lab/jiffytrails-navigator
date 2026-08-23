@@ -6,6 +6,37 @@ Samsung S24+, Android 16 / One UI, Google Maps current release.
 **If you're building anything that needs live turn-by-turn data from Google
 Maps on Android, this is the document to read.**
 
+> ## ⚠ UNVERIFIED: half of these keys are probably Samsung-only
+>
+> Flagged 22 Aug 2026 from a literature review, **not yet tested.** The field
+> list below appears to mix two different APIs:
+>
+> - `android.progress`, `android.progressMax`, `android.progressSegments`,
+>   `android.title` are **AOSP**. `EXTRA_PROGRESS_SEGMENTS` is confirmed as the
+>   literal string `"android.progressSegments"` in `android.app.Notification`.
+> - `android.ongoingActivityNoti.primaryInfo`, `.secondaryInfo`, `.chipIcon`
+>   appear to be **Samsung One UI** extras — the One UI 7 "Live Notifications /
+>   Now Bar" keys — rather than AOSP. The fullest public key list is
+>   [Akexorcist's writeup][ake], which enumerates exactly these and describes
+>   them as Samsung-specific.
+>
+> Everything here was captured on a **Samsung S24+**, so a One UI dependency
+> would not have shown up. If it holds, then on a Pixel or any non-Samsung
+> Android 16 device **the distance and road-name reads return null** and this
+> parser produces nothing usable.
+>
+> The AOSP-portable equivalents to check are
+> `Notification.Builder.setShortCriticalText()` (status-bar chip text, API 36)
+> and `ProgressStyle.setProgressTrackerIcon()`, plus plain `android.title` /
+> `android.text` / `android.subText`.
+>
+> **To verify:** run NavDump on any non-Samsung Android 16 phone and dump the
+> extras. If confirmed, retitle this document as a *Samsung One UI + Android 16*
+> mapping and add an AOSP branch to the parser. Until then, treat portability
+> beyond Samsung as unproven.
+>
+> [ake]: https://akexorcist.dev/live-notifications-and-now-bar-in-samsung-one-ui-7-as-developer-en/
+
 ---
 
 ## Summary
