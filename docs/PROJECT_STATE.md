@@ -413,6 +413,15 @@ A friend is buying a 3D printer. **Ask for a tolerance test** — a plate with
 Full detail and the verification procedure in `docs/HARDWARE.md`.
 
 **NEXT ACTIONS**
+0. **Read the sunlight section in HARDWARE.md before testing.** Research on
+   22 Aug 2026 put numbers on it: at ~100,000 lux with a glossy air-gapped
+   front, glare lands about 1430 nits on top of a ~250-nit panel, giving an
+   ambient contrast ratio near **1.2:1 against the 5:1 that text needs.** Bare,
+   in direct noon sun, this panel is expected to **fail**. Test it anyway — but
+   test it *with* a hood and matte film, and run the free polarised-sunglasses
+   orientation check first, because the bare result is close to a foregone
+   conclusion. Budget the Sharp Memory LCD (~$45, reflective) as plan B from
+   the start rather than treating it as a failure.
 1. **★ THE SUNLIGHT TEST** — outdoors 12:00–14:00. This is the live gate and
    nothing else should be built until it passes. Flash
    `firmware/sunlight_test/sunlight_test.ino`, which cycles the six real UI

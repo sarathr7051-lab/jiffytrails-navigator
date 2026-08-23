@@ -157,6 +157,100 @@ Read_User_Setup and check a value you know you changed. Note that swapping
 `ILI9341_DRIVER` for `ILI9341_2_DRIVER` does *not* change the printed driver ID
 — both report `9341`. Verify against `Display SPI frequency` or a pin instead.
 
+## ★★ Sunlight readability — do the arithmetic before the test
+
+Researched 22 Aug 2026, ahead of running Stage 4 Test B. **The numbers say a
+bare ILI9341 fails in direct Bengaluru noon sun.** Worth knowing before the
+test rather than being surprised by it.
+
+### The governing equation
+
+Glare is not subtractive, it is *additive light* laid over the whole panel:
+
+```
+L_reflected = E × R / π          E = ambient lux, R = front-surface reflectance
+ACR = (L_white + L_reflected) / (L_black + L_reflected)
+```
+
+Readable text needs **ACR ≥ 5:1**. Maps and detail want 10:1.
+
+### This panel, this city
+
+Bengaluru clear-sky noon is **~100,000 lux**. A generic ILI9341 module has a
+glossy overlay with an air gap, so R ≈ 4.5%.
+
+```
+L_reflected = 100000 × 0.045 / π ≈ 1430 nits of grey haze
+ACR = (250 + 1430) / 1430 ≈ 1.17 : 1
+```
+
+Against a requirement of 5:1. **That is not marginal, it is a grey rectangle.**
+Practitioner reports of ILI9341 outdoors agree — washed out, unreadable.
+
+Note what the equation says about mitigation: **cutting ambient light beats
+raising backlight.** A 5× reduction in E from a hood does more than a 4×
+brighter backlight, and costs a 3D print. Even a 1000-nit panel behind the same
+cheap air-gapped front only reaches 1.7:1 — commercial units optically bond and
+AR-coat down to ~1% reflectance to get anywhere.
+
+Measured brightness for these modules, where published at all: Winstar
+500 cd/m², POLCD ~300, TST28011T 275. Most listings publish nothing.
+
+### Mitigations, cheapest first
+
+1. **Free — rotate the panel 90° and test with the sunglasses you ride in.**
+   See the polariser note below. Do this before the enclosure is designed.
+2. **₹150–400 — a deep matte-black hood**, 25–35 mm, ribbed or flocked inside.
+   Biggest single win available. Attacks E directly.
+3. **₹150–300 — matte anti-glare film** cut from a phone screen protector,
+   applied *directly to the panel*. AG diffuses rather than eliminating, and
+   softens the image — irrelevant when the content is a giant arrow.
+4. **Free — the single-glyph layout.** Everything converges to grey in glare, so
+   contrast has to come from area and shape, not colour. Never encode anything
+   load-bearing in colour alone. This is already the design.
+5. **Mount angle** — a screen tilted face-up mirrors the sky. Tilt it toward the
+   rider, away from the zenith.
+
+### ★ Polarised sunglasses will black this out, and the fix is free
+
+Every LCD emits **linearly polarised** light. Polarised sunglasses are a linear
+polariser. Cross the two at 90° and the screen goes **completely black** — and
+it is head-angle dependent, so it comes and goes while riding.
+
+Consumer panels put the polariser axis vertical or horizontal, so **rotating the
+module 90° in the enclosure rotates its axis 90°** and can flip it from
+invisible to fully visible through polarised lenses.
+
+**This is the highest-value free experiment in the project. Test both
+orientations with your own riding sunglasses before the housing is finalised.**
+
+Two things not to do:
+- **Do not add a linear polariser sheet** as a DIY anti-glare measure. It either
+  halves the brightness or creates the exact blackout it is meant to prevent.
+- **A circular polariser (quarter-wave retarder) is the proper fix** but absorbs
+  a large fraction of emitted light. At 250 nits that is unaffordable. Only
+  viable on a bright panel.
+
+### Plan B, budgeted from the start rather than treated as failure
+
+If hood + film + layout still is not enough at 13:00 on a clear day, the answer
+is a part swap, not more mitigation:
+
+| Option | Cost | Trade |
+|---|---|---|
+| **Sharp Memory LCD 2.7" 400×240** (Adafruit 4694) | ~$45 | **Reflective — gets brighter as the sun does.** ~20% reflectivity in 100k lux ≈ 6400 nits equivalent white. Near-zero power, LCD-speed refresh, 13.5 KB framebuffer fits ESP32 easily. Monochrome, and needs a front light at night. **This is what Garmin Edge and Wahoo use, and why they never publish a nits figure.** |
+| 1000-nit sunlight-readable 2.8" IPS 240×320 (Orient Display / Newhaven / Chenghao) | ₹1,500–4,000 + import | Drop-in for the SPI code and keeps colour. Heavy backlight current. Still needs the hood — 1000 nits alone does not solve it. |
+
+A turn arrow and a distance number do not need colour. The Memory LCD is
+arguably the technically correct part for this job and always was.
+
+### Calibration point in our favour
+
+**Beeline Moto II publishes no nits figure at all and is widely reported as
+readable in bright sun.** Reviewers credit the tiny 1.45" screen, extremely high
+contrast, anti-glare coating and auto-backlight — not raw brightness. The design
+lever matters as much as the panel.
+
 ## Mount
 
 Reuses a **BOBO BM4** phone mount: handlebar clamp → 17 mm ball → socket bracket.
@@ -177,6 +271,20 @@ Roughly 94 × 58 × 20 mm, landscape.
   with the case closed over cling film. Perfect match for about ₹30.
 - **Window** — 2 mm polycarbonate bonded to the *inside* of the bezel, so water
   pressure seats it rather than lifting it.
+
+  **⚠ This conflicts with sunlight readability as currently drawn.** A window
+  with an air gap in front of the panel adds two more air/plastic interfaces at
+  ~4% reflection each. Published figures: air-gap stacks lose **8–20%** of light
+  to reflections, optically bonded stacks **under 5%**. On a 250-nit panel
+  already losing to glare, that gap is unaffordable.
+
+  Either **omit the separate window** and seal against the panel's own glass, or
+  **optically bond** the polycarbonate to the panel with clear optical silicone
+  or UV adhesive so there is no air layer. Decide this before printing — see the
+  sunlight section above.
+- **Sunshade hood, 25–35 mm, matte black, ribbed inside.** Not cosmetic. Per the
+  arithmetic above this is the largest single readability gain available, worth
+  more than any backlight change.
 - **Cable gland on the bottom face**, with a drip loop below.
 - **ePTFE pressure vent, Ø3 mm.** The part most DIY builds omit. A sealed box in
   the sun reaches 60 °C+; cold rain contracts the air and pulls water past the
