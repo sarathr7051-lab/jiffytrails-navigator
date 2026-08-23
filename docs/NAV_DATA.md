@@ -189,7 +189,7 @@ the maneuver prefix, since the arrow already conveys it. Note `title` writes
 | Navigating | ProgressStyle template present, `chipIcon` non-null |
 | Rerouting | `primaryInfo == "Rerouting..."`, `subText == "Arrive "` (truncated), `chipIcon` null |
 | Arriving | `title == "Arriving"`, `text == "at <destination>"`, `progressMax == 0`, no template |
-| Ended | notification removed |
+| Ended | notification removed — **but see the debounce warning below** |
 
 **★ Rerouting zeroes `progress` but keeps `progressMax`.** A progress bar
 computed naively will snap to 0% and back on every reroute — three times in the
@@ -199,6 +199,30 @@ redrawing it.
 Reroute recovery measured between **300 ms and 600 ms**. Budget one second.
 
 Arrival to notification-removed measured at **4.7 seconds**.
+
+### ★ Do not treat `onNotificationRemoved` as "navigation ended"
+
+Found in another project's source, not yet reproduced here, but it fits the
+mechanism and is cheap to defend against.
+
+**Maps removes and immediately re-posts its notification repeatedly during
+active navigation.** A listener that treats removal as the end of the route
+will flap — the display drops to the idle screen and back mid-ride, which is
+exactly the "never show a stale or wrong state" failure the UI is built to
+avoid, arrived at from the opposite direction.
+
+The fix others have landed on is a **debounce of about 15 seconds**: start a
+timer on removal, cancel it if a navigation notification reappears, and only
+declare the route over when the timer expires. Reference implementation:
+`MapsNotificationListenerService.kt` in
+[DEMP1993/Drive-assistant-android-app][demp] (`NAV_END_DELAY_MS`).
+
+Note this interacts with the 4.7 s arrival-to-removal figure above: a 15 s
+debounce means arrival is confirmed ~15 s after Maps drops the notification.
+For an arrival that is fine. Do not reuse the same timer for the stale
+watchdog, which needs to fire in 10 s.
+
+[demp]: https://github.com/DEMP1993/Drive-assistant-android-app
 
 ---
 
