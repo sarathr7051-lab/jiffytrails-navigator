@@ -17,3 +17,8 @@ void displayRender(const NavState& s);
 
 // Forces a full redraw on the next render (after a mode change or wake).
 void displayInvalidate();
+
+// Day is black-on-white for glare; night inverts. Elements that are themselves
+// inversions (the sub-30 m screen, the alert band) flip with it, so they stay
+// inversions rather than becoming ordinary.
+void displaySetNight(bool on);

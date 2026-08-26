@@ -68,6 +68,9 @@ static const uint8_t NAV_ARRIVED   = 1 << 3;
 // at ~1 Hz — a change-based watchdog has no workable threshold.
 static const uint32_t STALE_MS = 10000;
 
+// How long the arrival screen holds before falling back to idle.
+static const uint32_t ARRIVAL_DWELL_MS = 30000;
+
 // ------------------------------------------------------------- NavState
 
 // --------------------------------------------------------------- alerts
@@ -98,6 +101,18 @@ struct NavState {
 
   // --- from PKT_STATUS ---
   uint8_t  phoneBatteryPct = 0;
+  uint8_t  clockHour = 0;
+  uint8_t  clockMin  = 0;
+  bool     clockValid = false;
+
+  // --- from PKT_CONFIG ---
+  // Polarity comes from the phone, which knows real local sunset for the
+  // actual lat/long. Deliberately NOT from a light sensor: Bengaluru flyovers
+  // and underpasses would strobe the screen, and a polarity flap is a
+  // full-panel flash in peripheral vision - the exact night-vision insult the
+  // mode exists to prevent. Garmin splits it the same way: slow signal drives
+  // polarity, fast signal drives brightness.
+  bool     night = false;
 
   // --- from PKT_CALL / PKT_NOTIFY ---
   uint8_t  callState  = CALL_IDLE;
@@ -113,6 +128,12 @@ struct NavState {
   uint32_t lastPacketMs = 0;       // millis() of the last arrival, any type
   uint32_t packetCount  = 0;       // arrivals, not changes
 
+  // --- arrival latch, owned by the watchdog ---
+  // Maps drops its notification ~4.7 s after arrival, which clears nav_active.
+  // Without a latch the arrival screen would flash past and land on IDLE.
+  uint32_t arrivedAtMs  = 0;
+  bool     showArrival  = false;
+
   bool navActive() const { return flags & NAV_ACTIVE;    }
   bool rerouting() const { return flags & NAV_REROUTING; }
   bool gpsWeak()   const { return flags & NAV_GPS_WEAK;  }
@@ -124,7 +145,8 @@ struct NavState {
 enum UiScreen : uint8_t {
   UI_DISCONNECTED,   // link down. Distinct from stale: the link itself is gone
   UI_STALE,          // link up, data stopped
-  UI_IDLE,           // nav_active == 0. Clock and trip. NEVER a maneuver
+  UI_ARRIVED,        // you are there. Latched, because Maps drops the route
+  UI_IDLE,           // nav_active == 0. Clock. NEVER a maneuver
   UI_REROUTING,      // arrow suppressed — the old turn is no longer true
   UI_NAV_FAR,        // > 500 m
   UI_NAV_APPROACH,   // 500-100 m
@@ -137,6 +159,7 @@ enum UiScreen : uint8_t {
 inline UiScreen screenFor(const NavState& s) {
   if (!s.linkUp)     return UI_DISCONNECTED;
   if (s.stale)       return UI_STALE;
+  if (s.showArrival) return UI_ARRIVED;
   if (!s.navActive()) return UI_IDLE;
   if (s.rerouting()) return UI_REROUTING;
   if (s.dist_m <  30) return UI_NAV_NOW;

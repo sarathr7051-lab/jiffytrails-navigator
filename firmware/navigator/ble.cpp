@@ -187,6 +187,19 @@ static bool handleStatus(PacketReader& r, NavState& s) {
   // A percentage outside 0-100 is a parser bug on the phone, not a reason to
   // drop an otherwise valid packet — clamp so the battery glyph stays sane.
   s.phoneBatteryPct = (pct > 100) ? 100 : pct;
+
+  // Clock is an optional tail, so an older phone build that sends the
+  // two-byte STATUS still parses. The device has no RTC and no network, so
+  // the phone is the only time source it will ever have.
+  if (r.remaining() >= 2) {
+    const uint8_t hh = r.u8();
+    const uint8_t mm = r.u8();
+    if (r.ok() && hh < 24 && mm < 60) {
+      s.clockHour = hh;
+      s.clockMin  = mm;
+      s.clockValid = true;
+    }
+  }
   return true;
 }
 
@@ -243,11 +256,28 @@ static bool handleNotify(PacketReader& r, NavState& s) {
   return true;
 }
 
+// [u8 brightness][u8 units][u8 night] - night is an optional tail so an older
+// phone build still parses.
+static bool handleConfig(PacketReader& r, NavState& s) {
+  const uint8_t brightness = r.u8();
+  const uint8_t units      = r.u8();
+  if (!r.ok()) return false;
+  (void)brightness;   // no PWM on the backlight yet - needs a MOSFET
+  (void)units;        // metric only for now
+
+  if (r.remaining() >= 1) {
+    const uint8_t night = r.u8();
+    if (r.ok()) s.night = (night != 0);
+  }
+  return true;
+}
+
 static const PacketHandler HANDLERS[] = {
   { PKT_NAV,    handleNav    },
   { PKT_STATUS, handleStatus },
   { PKT_CALL,   handleCall   },
   { PKT_NOTIFY, handleNotify },
+  { PKT_CONFIG, handleConfig },
 };
 static const size_t N_HANDLERS = sizeof(HANDLERS) / sizeof(HANDLERS[0]);
 

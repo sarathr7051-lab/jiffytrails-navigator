@@ -65,6 +65,7 @@ void setup() {
 void loop() {
   bleTick();              // re-advertises after a disconnect
   watchdogTick(state);    // link state and freshness
+  displaySetNight(state.night);
   nudgeIfQuiet();
   displayRender(state);   // renders whatever state now says, and nothing else
 }

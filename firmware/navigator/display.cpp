@@ -43,9 +43,25 @@ static const int16_t H = 240;
 
 // ---------------------------------------------------------------- palette
 
-static const uint16_t C_BG    = TFT_WHITE;
-static const uint16_t C_FG    = TFT_BLACK;
-static const uint16_t C_MUTED = 0x8410;   // mid grey, de-emphasised text
+/*
+  Palette, not constants — day and night swap these.
+
+  Day is black on white: daylight readability is the project's gate, and
+  positive polarity gives the most ink against glare. Night inverts, because a
+  mostly-white panel at 700 mm destroys the dark adaptation you need to see an
+  unlit Bengaluru road.
+
+  C_INV_* are for elements that invert *relative to the current theme* — the
+  sub-30 m screen and the alert band. They must not be hardcoded to black and
+  white, or at night they would stop being an inversion and start being
+  ordinary.
+*/
+static uint16_t C_BG     = TFT_WHITE;
+static uint16_t C_FG     = TFT_BLACK;
+static uint16_t C_MUTED  = 0x8410;    // mid grey, de-emphasised text
+static uint16_t C_INV_BG = TFT_BLACK;
+static uint16_t C_INV_FG = TFT_WHITE;
+static bool     nightMode = false;
 
 // ----------------------------------------------------------------- layout
 //
@@ -264,8 +280,8 @@ static void drawBand(const NavState& s, BandContent band) {
                        (s.notifySrc[0] ? s.notifySrc : notifyTag(s.notifyKind));
   const char* body   = isCall ? s.callName : s.notifyText;
 
-  tft.fillRect(0, BAND_Y, W, BAND_H, TFT_BLACK);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.fillRect(0, BAND_Y, W, BAND_H, C_INV_BG);
+  tft.setTextColor(C_INV_FG, C_INV_BG);
 
   tft.setTextDatum(TL_DATUM);
   tft.drawString(tag, 8, BAND_Y + 5, 2);
@@ -277,25 +293,66 @@ static void drawBand(const NavState& s, BandContent band) {
   else         drawFitted(isCall ? "incoming" : "notification", 8, BAND_Y + 21, W - 16, 4);
 }
 
+// Never a maneuver here, whatever the last packet said — BLE_PROTOCOL.md.
+//
+// The clock is the point of this screen. A handlebar clock is genuinely useful
+// stopped at a signal, and it is the one thing worth showing when there is no
+// route. It comes from the phone: the device has no RTC and no network, so
+// there is no other source, and without one this screen has nothing to say.
 static void drawIdle(const NavState& s) {
-  // Never a maneuver here, whatever the last packet said - BLE_PROTOCOL.md.
-  // ui_mock showed a clock and trip stats; NavState has neither, and a made-up
-  // clock on a handlebar is worse than no clock.
   tft.fillScreen(C_BG);
-  tft.setTextColor(C_FG, C_BG);
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextSize(2);                       // font 4 is the largest full-ASCII
-  tft.drawString("READY", W / 2, 96, 4);    // font in the library; 26 px x2
-  tft.setTextSize(1);
+
+  if (s.clockValid) {
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u:%02u", (unsigned)s.clockHour, (unsigned)s.clockMin);
+    tft.setTextColor(C_FG, C_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.drawString(buf, W / 2, 104, 7);   // font 7, 48 px — digits and colon
+  } else {
+    // No clock yet. Say what is actually true rather than inventing a time.
+    tft.setTextColor(C_FG, C_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextSize(2);
+    tft.drawString("READY", W / 2, 104, 4);
+    tft.setTextSize(1);
+  }
 
   tft.setTextColor(C_MUTED, C_BG);
-  tft.drawString("waiting for navigation", W / 2, 156, 2);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("no route", W / 2, 168, 2);
 
-  if (s.phoneBatteryPct) {
-    char buf[16];
+  // Battery below 20% only. A permanent percentage is a re-glance magnet —
+  // something you check because it is there, not because you need it.
+  if (s.phoneBatteryPct && s.phoneBatteryPct <= 20) {
+    char buf[20];
     snprintf(buf, sizeof(buf), "phone %u%%", (unsigned)s.phoneBatteryPct);
     tft.setTextDatum(BR_DATUM);
     tft.drawString(buf, 312, 232, 2);
+  }
+}
+
+// The arrival screen. This existed in the protocol as the NAV_ARRIVED flag and
+// was rendered nowhere — arriving simply dropped to idle, so the one moment
+// the device should acknowledge was the one it skipped. Latched by the
+// watchdog for ARRIVAL_DWELL_MS, because Maps drops the notification within
+// about five seconds of arrival.
+static void drawArrived(const NavState& s) {
+  tft.fillScreen(C_BG);
+
+  drawManeuver(tft, GLYPH_FAR_X + 8, 68, 72, MV_DESTINATION, C_FG, C_BG);
+
+  tft.setTextColor(C_FG, C_BG);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextSize(2);
+  tft.drawString("ARRIVED", 108, 84, 4);
+  tft.setTextSize(1);
+
+  // The destination name, if the last packet carried one.
+  if (s.instruction[0]) {
+    char line[INSTRUCTION_MAX + 4];
+    fitText(s.instruction, line, sizeof(line), W - 116, 4);
+    tft.setTextColor(C_MUTED, C_BG);
+    tft.drawString(line, 108, 140, 4);
   }
 }
 
@@ -312,6 +369,10 @@ static void drawChrome(const NavState& s, UiScreen scr) {
       drawBanner("STALE", "no data 10 s", C_BG, C_MUTED);
       return;
 
+    case UI_ARRIVED:
+      drawArrived(s);
+      return;
+
     case UI_IDLE:
       drawIdle(s);
       return;
@@ -323,10 +384,10 @@ static void drawChrome(const NavState& s, UiScreen scr) {
 
     case UI_NAV_NOW: {
       // Inverted below 30 m. A change of state you cannot miss at a junction.
-      tft.fillScreen(TFT_BLACK);
+      tft.fillScreen(C_INV_BG);
       drawManeuver(tft, GLYPH_BIG_X, GLYPH_BIG_Y, GLYPH_BIG_S, s.maneuver,
-                   TFT_WHITE, TFT_BLACK);
-      if (s.gpsWeak()) drawGpsWeak(false, TFT_WHITE, TFT_BLACK);
+                   C_INV_FG, C_INV_BG);
+      if (s.gpsWeak()) drawGpsWeak(false, C_INV_FG, C_INV_BG);
       return;
     }
 
@@ -422,7 +483,46 @@ void displayRender(const NavState& s) {
   if ((int32_t)s.dist_m == lastDist) return;
   lastDist = s.dist_m;
 
-  if (scr == UI_NAV_NOW)      pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, TFT_WHITE, TFT_BLACK);
+  if (scr == UI_NAV_NOW)      pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_INV_FG, C_INV_BG);
   else if (scr == UI_NAV_FAR) pushDistance(s.dist_m, SPR_X, DIST_Y_FAR,   C_FG, C_BG);
   else                        pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_FG, C_BG);
+}
+
+void displaySetNight(bool on) {
+  if (on == nightMode) return;
+  nightMode = on;
+
+  if (on) {
+    /*
+      Night text is grey, not white — and this is the part that matters.
+
+      Inverting already cuts total emitted light by roughly 6-8x, because a
+      typical nav screen is only 10-15% ink: black-on-white drives ~85% of the
+      panel to full transmission, white-on-black drives ~12%. But the glyphs
+      themselves would still be at full backlight, and they are exactly what
+      the eye fixates on.
+
+      On a transmissive panel a grey pixel genuinely transmits less light than
+      a white one, so dropping the text to ~70% is real dimming with no
+      hardware at all. Rod dark adaptation takes 20-30 minutes to build and is
+      lost almost instantly, so every full-white glance on an unlit road costs
+      real seeing distance.
+
+      This is a stopgap. The proper answer is PWM on the backlight, which needs
+      a MOSFET (see HARDWARE.md) — and that work is needed on the Sharp Memory
+      LCD path too, where a front light must be dimmable from day one.
+    */
+    C_BG = TFT_BLACK; C_FG = 0xAD95;          // ~70% white
+    // The alert band still has to be an unmissable luminance event, but a
+    // full-white block at night is the flash this whole mode exists to avoid.
+    // Grey block, black text: still a step change against a near-black ground.
+    C_INV_BG = 0xAD95; C_INV_FG = TFT_BLACK;
+    C_MUTED  = 0x6B4D;                        // ~45%, still below the text
+  } else {
+    C_BG = TFT_WHITE; C_FG = TFT_BLACK;
+    C_INV_BG = TFT_BLACK; C_INV_FG = TFT_WHITE;
+    C_MUTED  = 0x8410;
+  }
+
+  displayInvalidate();
 }

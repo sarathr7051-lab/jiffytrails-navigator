@@ -39,4 +39,22 @@ void watchdogTick(NavState& s) {
   }
 
   s.stale = (millis() - s.lastPacketMs) > STALE_MS;
+
+  // Arrival latch. Maps drops its notification about 4.7 s after you arrive,
+  // which clears nav_active — so without latching, the arrival screen would
+  // flash past and settle on IDLE, and the one moment the device should
+  // acknowledge would be the one it skipped.
+  if (s.arrived()) {
+    if (!s.showArrival && s.arrivedAtMs == 0) {
+      s.arrivedAtMs = millis();
+      s.showArrival = true;
+    }
+    if (s.showArrival && (millis() - s.arrivedAtMs) > ARRIVAL_DWELL_MS) {
+      s.showArrival = false;
+    }
+  } else {
+    // A new route clears the latch so the next arrival can fire.
+    s.showArrival = false;
+    s.arrivedAtMs = 0;
+  }
 }

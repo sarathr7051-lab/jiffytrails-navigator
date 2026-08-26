@@ -34,11 +34,11 @@ corrupt state.
 | Type | Name | Payload |
 |---|---|---|
 | 0x01 | NAV | `u8 maneuver, u16 dist_m, u8 next_maneuver, u16 next_dist_m, u16 eta_min, u16 remaining_100m, u8 flags, utf8 instruction` |
-| 0x02 | STATUS | `u8 flags, u8 phone_battery_pct` |
+| 0x02 | STATUS | `u8 flags, u8 phone_battery_pct, [u8 hour, u8 minute]` |
 | 0x03 | CALL | `u8 state (0 idle / 1 ringing / 2 active), utf8 name` |
 | 0x04 | MEDIA | `u8 state (0 stop / 1 play / 2 pause), utf8 title \0 artist` |
 | 0x05 | TRIP | `u32 distance_m, u16 duration_min, u16 speed_kmh_x10, u16 max_speed_kmh_x10` |
-| 0x06 | CONFIG | `u8 brightness (0 = auto, 1-100 manual), u8 units` |
+| 0x06 | CONFIG | `u8 brightness (0 = auto, 1-100 manual), u8 units, [u8 night]` |
 | 0x07 | TRAFFIC | segment list derived from `progressSegments` |
 | 0x08 | NOTIFY | `u8 kind, u8 src_len, utf8 src, utf8 text` |
 
