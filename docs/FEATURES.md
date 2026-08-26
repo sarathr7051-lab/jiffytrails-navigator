@@ -209,3 +209,108 @@ Bengaluru tile storage, for reference: ~2,100 tiles at z16 → 275 MB raw RGB565
 **Vector first, on the existing board.** If the basemap is genuinely missed
 later, buy the $25 S3 board and add raster tiles *underneath* the vector layer
 already built. That ordering costs nothing and de-risks everything.
+
+### Decision — 26 Aug 2026
+
+**Vector route line, on the existing board.** Sarath's call. Build it after the
+BLE link exists, since it rides on the same transport. No board purchase.
+
+---
+
+## AI desk buddy — SPLIT: visual half yes, voice half needs a new board
+
+**Proposed:** the device doubles as an AI companion / ambient display on the
+desk when it is not on the bike.
+
+### The config gate that settles it
+
+XiaoZhi (`78/xiaozhi-esp32`, 29k★, MIT, active) is the dominant project in this
+space, and it *does* have a first-class plain-ESP32 target — a 4 MB flash build
+matching this board exactly. But its own `Kconfig.projbuild` gates the
+interesting parts:
+
+```
+Wakenet model without AFE   depends on IDF_TARGET_ESP32 && SPIRAM
+Wakenet model with AFE      depends on (ESP32S3 || ESP32P4) && SPIRAM
+Multinet (custom wake word) depends on (ESP32S3 || ESP32P4) && SPIRAM
+Audio processor             depends on (ESP32S3 || ESP32P4) && SPIRAM
+Camera menu                 depends on !IDF_TARGET_ESP32
+```
+
+**No PSRAM means no wake word, no acoustic echo cancellation, no camera.** Not a
+porting problem — an explicit dependency. The underlying reason is the audio
+front end: AEC ~114 KB, noise suppression ~27 KB, AFE layer ~73 KB. Over 200 KB
+of internal SRAM on a chip where WiFi, TLS and the display already contend for
+~150–250 KB.
+
+### What genuinely runs on the LOLIN32 today — software only
+
+- **Ambient dashboard** — weather, clock, calendar, transit, pomodoro. Saturated
+  with working code; the "Cheap Yellow Display" community is effectively this
+  hardware.
+- **LLM-generated daily briefing over HTTPS.** Best done with the
+  [`kyleturman/home-dashboard`][khd] pattern (300★, MIT): a small server hits the
+  APIs, calls Claude, renders the layout, and returns a **pre-rendered image or
+  pre-wrapped text**. The microcontroller does no JSON parsing, holds no API key,
+  and owns no layout code. On a 4 MB no-PSRAM board this is not a compromise,
+  it is the correct design — and it keeps the API key off a device that lives on
+  a motorbike.
+- **Ask-a-question without a mic** — ESP32 serves a small LAN page, question
+  typed on the phone, answer renders on the TFT. No STT, no cost.
+- **Animated character with moods** — [`FluxGarage/RoboEyes`][re] (801★, GPL-3.0)
+  is a pure Adafruit_GFX drawing library: happy / tired / angry, autoblink, idle
+  drift. No PSRAM, no AI. Drive the mood from data (calendar density, weather)
+  rather than conversation.
+- **Phone notification mirror** — [`fbiego/chronos-esp32`][chr] (174★, MIT) pairs
+  over BLE and delivers notifications, weather, phone battery, time sync **and
+  turn-by-turn navigation**. Note it therefore serves *both* roles.
+
+### What needs a cheap part (~₹1,000 total)
+
+| Part | ~Cost | Unlocks |
+|---|---|---|
+| INMP441 I2S mic | ₹400 | **Push-to-talk voice.** I2S DMA chunks streamed over WebSocket to own server → Whisper → LLM. No PSRAM needed because audio is never buffered whole. Working repos exist. |
+| MAX98357A + speaker | ₹500 | Spoken replies, if the server sends low-bitrate PCM so the ESP32 decodes nothing |
+| microSD module | ₹300 | Fonts, sprite sheets, animation frames. Relieves flash pressure for *assets*, not code |
+| Reed switch or ID resistor | ₹100 | Deterministic dock detection |
+
+**The real ceiling is 4 MB flash**, and no cheap part fixes it. TLS + LVGL +
+fonts + audio libraries get uncomfortable.
+
+### What genuinely requires a different board
+
+All PSRAM/SIMD-gated, none of it a porting effort: always-on wake word, AEC and
+barge-in, offline command words, OpenAI's Realtime voice-to-voice (ESP32-S3
+only, full stop), on-device LLM inference (needs ESP-DSP SIMD that only exists
+on S3), and camera.
+
+On-device LLM is worth dismissing explicitly: the flagship demo runs a
+**260K-parameter** TinyStories model at 19 tok/s on an S3. A newer build reaches
+28.9M params at ~9.5 tok/s. These are toys, not assistants. Do not chase this.
+
+**If voice is wanted: `ESP32-S3-DevKitC-1-N16R8`, ~$15–20.** 16 MB flash, 8 MB
+PSRAM, keeps the existing ILI9341 and wiring, unlocks the entire stack.
+
+### Dual-mode detection
+
+No canonical open-source project does context-switching personalities. The
+mechanisms are well understood though:
+
+- **WiFi SSID presence** — zero hardware, fails safe (out of the house = bike).
+  Best primary signal.
+- **Dock ID resistor on an ADC pin** — pennies, deterministic. Good override.
+- **BLE connection state** — phone pushing nav = bike mode.
+- **Not VBUS sense** — USB-powered in both modes, so it tells us nothing.
+
+Note **WiFi + BLE coexistence on plain ESP32 costs real RAM.** Running one radio
+per mode is better, which dual-mode gives for free. Keep it as one firmware with
+a mode branch, not two OTA slots — 4 MB flash will not hold two app partitions
+plus a filesystem once TLS and fonts are in.
+
+**And the cleanest answer of all:** if an S3 is bought for voice, put the S3 on
+the desk and leave the LOLIN32 on the bike. Two devices, no dual-mode problem,
+no compromise on either side.
+
+[khd]: https://github.com/kyleturman/home-dashboard
+[re]: https://github.com/FluxGarage/RoboEyes
+[chr]: https://github.com/fbiego/chronos-esp32
