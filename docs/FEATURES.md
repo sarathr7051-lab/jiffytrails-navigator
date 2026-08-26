@@ -562,3 +562,113 @@ generic trailing-text reader eats its second field.
 Still refused, per the research: now-playing (text you must parse, no
 navigational value), continuous traffic display (invites study, not glance),
 persistent battery percentage (a re-glance magnet — show it below 20% only).
+
+---
+
+## Lane guidance — REOPENED and re-closed, 26 Aug 2026
+
+Revisited after asking whether the phone's gyroscope plus an open-source map
+could do what Google does. The answer reframes the feature.
+
+### The reframe: lane guidance does not need to know your lane
+
+"Use the left 2 lanes to turn left" is **advisory**. Google's classic lane
+guidance does not know which lane you are in. Neither does OsmAnd's lane widget
+nor Valhalla's lane output. They all read map data and tell you where to *be*.
+
+"Which lane am I in" is a **different, optional, and far harder** feature. It
+was never needed for what was asked. That kills the gyroscope question before
+the physics does.
+
+### But the physics kills it too
+
+**A car lane change produces lateral acceleration. A motorcycle lane change is
+engineered not to.** The rider leans precisely so the resultant of gravity and
+centripetal force stays aligned with the bike's vertical axis — so in a
+coordinated lean the lateral accelerometer reading is *near zero by
+construction*. The signal every car-based algorithm integrates is not there.
+
+What remains is a roll-rate doublet, shared with cornering, filtering, swerving
+round a pothole, and a rider shifting weight. On Bengaluru roads all of those
+happen constantly. And MEMS bias drift grows position error as t², reaching
+metres within seconds — you cannot resolve 3.5 m against that.
+
+Handlebar mounting makes it worse: the phone measures *steering input* on top of
+chassis motion.
+
+### What Google actually did — the decisive data point
+
+Google has dual-frequency GNSS, 3D building models, planet-scale ML and its own
+HD map. Its "Live lane guidance" — the feature that says which lane you are
+*currently* in — **uses the car's front-facing camera** with AI lane-marking
+detection. Shipped on the Polestar 4, Google Built-in only.
+
+**If a camera is the cheapest path for Google, an ESP32 and a phone gyro will
+not beat it.** And on Bengaluru's marking quality a camera would struggle too.
+
+### And Google does not offer lane guidance in India at all
+
+Classic lane guidance is pure map data from Google's proprietary road
+attribution — US, Canada, Japan, ~20 European countries. **India is not on the
+list.** The feature being asked for is one Google itself does not provide here.
+
+### Positioning, for the record
+
+- **S24+ is dual-frequency (L1+L5, E1+E5a)** — confirmed. Standalone accuracy
+  tops out at **2–3 m** against a **3.5 m** Indian lane (IRC standard). Not
+  lane-level, and wrong in ways you cannot detect.
+- Raw `GnssMeasurement` with RTK: the Google Smartphone Decimeter Challenge
+  first went below 1 m in 2023–24 — **offline, post-processed, by a funded
+  expert**. Real-time urban RTK fixes **under ~35%** of the time even with good
+  hardware. On a vibrating, body-shadowed, handlebar-mounted phone, worse.
+- **Survey of India CORS** exists (1,105 stations, NTRIP, ±3 cm) but free
+  subscription is government and academic only. Free community casters have no
+  Bengaluru base within range.
+
+### The map data is still the blocker
+
+Unchanged at **0.52%**. And the alternatives have closed further:
+
+| Source | Lane turn data for Bengaluru? |
+|---|---|
+| **Mappls / MapmyIndia** | **Yes** — Routing API returns a lanes array. Opaque pricing, mandatory logo, free plan terminable. Swaps Google dependence for Mappls dependence |
+| Overture Maps | **No** — `lanes` was *removed from the schema*, never populated |
+| TomTom Orbis Lane Model | Germany-first, no India commitment, automotive licensing |
+| HERE | Lane attributes exist; India coverage undocumented, not in the free REST tier |
+| Bhuvan / ISRO / NHAI | No lane topology at all |
+
+### The tractable path, if it is ever wanted
+
+1. **30-minute sanity check first.** Install OsmAnd, enable the Lanes widget,
+   ride two or three usual routes. It renders `turn:lanes` straight from OSM, so
+   **whatever it shows is the ceiling** for any OSM-based system. Do this before
+   writing any code.
+2. **Tag your own junctions.** You do not ride 8,249 ways — you ride perhaps
+   50–200 junctions regularly. JOSM over Esri World Imagery (legally traceable
+   for OSM), verified against your own memory. **20–50 hours, one-time**, and it
+   is upstream, so it fixes OsmAnd and Organic Maps for everyone else too.
+3. **Self-host Valhalla.** With `turn_lanes` enabled each maneuver carries a
+   `lanes` array with per-lane `directions`, `valid` and `active` bitmasks —
+   `active` is exactly "the lanes to be in for this turn". Server-side, zero
+   positioning required, straight over BLE.
+
+That combination is genuine independence from Google, and the only real cost is
+bounded manual mapping of your own commute.
+
+### The better answer for Bengaluru
+
+Where `turn:lanes` is absent, emit a coarse **"keep left" / "keep right"** hint
+from OSM's `lanes` count plus turn direction, with staged warnings at 300 / 150
+/ 50 m.
+
+On arterials where lane discipline is weak enough that "lane 2 of 4" is a
+fiction on the ground, **"get to the left edge, turn in 200 m" is the genuinely
+actionable instruction** — and it needs no lane data and no lane-level
+positioning at all.
+
+### Decision — still closed
+
+**Not building it.** The reframe removes the gyro question entirely, the physics
+would have killed it anyway, Google does not offer this in India, and the map
+data remains at 0.52%. The OsmAnd sanity check is the only cheap next step, and
+it is a 30-minute errand, not a project.
