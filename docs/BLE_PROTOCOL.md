@@ -50,6 +50,44 @@ NAV flags:
 | 2 | gps_weak |
 | 3 | arrived |
 
+### ⚠ Three rows above cannot be implemented as written
+
+Found 26 Aug 2026 while building the firmware against this document. Recorded
+rather than invented, because guessing a wire format here would guarantee an
+interop break later.
+
+**`0x02 STATUS` — the `flags` byte has no documented bits.** Nowhere in the doc
+set says what any bit means. The firmware parses the byte for framing
+correctness and discards it. It is deliberately *not* folded into `NavState.flags`,
+which is the NAV flag word — merging them would corrupt navigation state.
+
+**`0x07 TRAFFIC` — "segment list derived from `progressSegments`" is a pointer,
+not a format.** No count, no per-segment layout, no colour encoding, no units.
+Unimplementable. It also has a downstream consequence: `NavState` has no traffic
+field, so **the traffic bar from `ui_mock` is not in the shipped display**.
+Restoring it needs this row specified first. Drawing fake segments would be a
+lie about the road ahead.
+
+**`0x04 MEDIA` — NUL is a field separator here and nowhere else.** `utf8 title
+\0 artist` is the only payload that splits on NUL. NAV and CALL both end in a
+single trailing UTF-8 field that runs to the end of the payload, so a generic
+"read the rest as text" helper — which is what the firmware has — will silently
+drop the artist. Whoever writes that handler needs to know.
+
+### Two more gaps worth stating
+
+**`INSTRUCTION_MAX` is 64, but MTU 185 permits a 172-byte payload.** The MTU
+rationale above ("so strings fit in one write") is true of the wire and not of
+the display buffer: a long instruction arrives intact and is then truncated on
+render. Longest observed is 60 characters, so there is headroom — but it is
+three characters, not the margin the MTU figure implies.
+
+**Instruction text is not null-terminated on the wire.** Its extent is `len`
+minus the 11-byte fixed block. A receiver should still stop at the first NUL if
+a sender appends one, and must truncate on a UTF-8 code point boundary —
+Bengaluru road names carry Kannada, and a severed multi-byte sequence renders as
+garbage.
+
 `next_maneuver` and `next_dist_m` are reserved. Google Maps does not expose
 them (see NAV_DATA.md); they exist so an OsmAnd or Mapbox source can fill them
 without a protocol change.

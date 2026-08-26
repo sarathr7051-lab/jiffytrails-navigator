@@ -256,7 +256,11 @@ namespace {
 class ServerCallbacks : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
     g_connected = true;
-    if (g_state) g_state->linkUp = true;
+    // NavState.linkUp is deliberately NOT written here. watchdogTick() is its
+    // single writer, deriving it from bleConnected() once per loop, because it
+    // needs the not-connected -> connected edge to restart the freshness clock.
+    // Setting it from this callback would consume that edge and the branch
+    // would never fire.
 
     // 15-30 ms interval, 1.8 s supervision timeout. The phone posts at ~1 Hz,
     // so a tighter interval only burns battery; the timeout is what decides
@@ -267,8 +271,7 @@ class ServerCallbacks : public NimBLEServerCallbacks {
 
   void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
     (void)pServer; (void)connInfo;
-    g_connected = false;
-    if (g_state) g_state->linkUp = false;
+    g_connected = false;   // watchdogTick owns NavState.linkUp
     // Advertising is restarted by bleTick(), not here — see ADV_RETRY_MS.
     BLE_LOG("[ble] disconnected, reason %d\n", reason);
   }
@@ -331,7 +334,6 @@ void bleBegin(NavState* state, const char* deviceName) {
   adv->start();
 
   g_lastAdvMs = millis();
-  if (g_state) g_state->linkUp = false;
 }
 
 void bleTick() {
