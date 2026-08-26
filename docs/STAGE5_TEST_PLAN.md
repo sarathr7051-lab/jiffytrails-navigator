@@ -482,3 +482,95 @@ Stage 5 passes when **all** of these are true:
 Anything that fails, fix before writing the Android app. Every one of these
 becomes ten times harder to diagnose once there is a phone in the loop, because
 you can no longer tell which end is lying.
+
+---
+
+## Path A2 — vectors for the features added 26 Aug 2026
+
+Alerts, arrival, clock and day/night landed after this plan was written. Byte
+counts and ASCII verified, not hand-typed.
+
+Send these on characteristic `6E400002-…`, BYTE ARRAY format, same as Path A.
+
+### A10 · Incoming call
+
+```
+03 05 01 41 6D 6D 61
+```
+
+CALL, state 1 (ringing), name "Amma".
+
+**Expect:** the bottom band **inverts to a solid black block** with white text —
+tag "CALL", body "Amma". It persists while ringing.
+
+Clear it with state 0:
+
+```
+03 01 00
+```
+
+### A11 · Notification
+
+```
+08 12 01 08 57 68 61 74 73 41 70 70 52 65 61 63 68 65 64 3F
+```
+
+NOTIFY, kind 1 (message), src "WhatsApp", text "Reached?".
+
+**Expect:** band inverts, tag "WhatsApp", body "Reached?". **It must disappear
+by itself after 6 seconds** — that is `NOTIFY_DWELL_MS`, and a notification that
+persists has become a second thing to read on every glance.
+
+### A12 · ★ The suppression rule — the important one
+
+Send A11, then **within 6 seconds** send A2 (the 20 m packet).
+
+**Expect: the band goes blank.** Not "the alert moves", not "the alert shrinks"
+— blank. Under 100 m to a turn nothing may cover the maneuver, and the alert is
+not queued for afterwards either.
+
+This is the single most important behaviour in the alert feature. If the alert
+survives A2, that is a bug and the turn is being obscured.
+
+### A13 · Arrival
+
+```
+01 0F 14 00 00 00 00 00 00 00 00 00 09 48 6F 6D 65
+```
+
+NAV, maneuver DESTINATION, 0 m, flags `0x09` = nav_active + arrived,
+instruction "Home".
+
+**Expect:** destination flag glyph, "ARRIVED", and "Home". **It must hold for
+about 30 seconds** (`ARRIVAL_DWELL_MS`) before falling back to idle — Maps drops
+its notification about 4.7 s after arrival, so without the latch this screen
+would flash past.
+
+### A14 · Clock
+
+```
+02 04 00 4E 0E 23
+```
+
+STATUS, flags 0, battery 78%, 14:35.
+
+**Expect:** nothing visible yet — then send `01 02 00 00` (a NAV with
+nav_active = 0) to drop to idle, and the idle screen should show **14:35**
+instead of READY.
+
+Battery at 78% must **not** appear. It only shows at 20% or below — try
+`02 04 00 0F 0E 23` (15%) and it should appear bottom-right.
+
+### A15 · Day / night
+
+```
+06 03 00 00 01     night on
+06 03 00 00 00     night off
+```
+
+**Expect on night:** the whole display inverts — near-black ground, and the text
+should be **grey, not white**. If the text looks pure white, the grey-text change
+did not take, and the point of night mode is lost.
+
+The alert band should now be a **grey block with black text**, not a white
+flash. Re-run A10 with night on to confirm.
