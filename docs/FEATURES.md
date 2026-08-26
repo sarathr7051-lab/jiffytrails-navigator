@@ -99,12 +99,17 @@ is the strongest channel; size is a good second; **never** use dashed-vs-solid
 (dashes blur to grey under vibration) or dithered grey (reads as filled once
 blurred, inverting the meaning).
 
-### Decision
+### Decision — CLOSED, 26 Aug 2026
 
-**Do not build.** Revisit only if the notification-text check finds lane
-phrasing. Even then, sequence it after the sunlight gate — lane guidance is the
-lowest-contrast, finest-detail element on the screen and the first thing glare
-destroys.
+**Not building it.** Sarath's call, made on the coverage number.
+
+The notification-text check was offered and declined — reasonably, since even a
+positive result leads to the lowest-contrast, finest-detail element on the
+screen, which is the first thing glare destroys and the last thing this project
+needs before the sunlight gate is settled.
+
+**Do not reopen this** without new evidence. If it ever comes back, the
+lateral-position bar above is the design, not an arrow strip.
 
 Note also that on a Bengaluru motorcycle, where lane discipline is notional and
 filtering is normal, "take the left 2 lanes" is worth considerably less than it
