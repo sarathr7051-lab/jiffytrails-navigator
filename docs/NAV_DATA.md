@@ -172,7 +172,7 @@ dropping 11909 → 7448 with `progress` resetting, six seconds apart, and no
 `"Rerouting..."` ever appearing. Treat a large `progressMax` change as a route
 replacement in its own right.
 
-**7. Instruction strings are long.** Up to 59 characters observed
+**7. Instruction strings are long.** Up to 60 characters observed
 (`"Slight right at Horamavu Agara Circle onto Horamavu Agara Rd"`). At a
 glanceable size on a 320 px display you have room for roughly 16–20. Truncating
 from the end destroys the road name, which is the useful part — better to drop

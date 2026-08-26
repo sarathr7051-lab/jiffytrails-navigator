@@ -21,6 +21,16 @@ Char (notify)  6e400003-b5a3-f393-e0a9-e50e24dcca9e   ESP32 → phone
 
 Little-endian throughout.
 
+**`len` is the PAYLOAD length — it excludes the two header bytes.** Stated
+explicitly because it is load-bearing: the NAV instruction string has no length
+prefix and no terminator, so its extent is derived as `len` minus the 11-byte
+fixed block. Getting this wrong truncates or overruns every road name.
+
+A receiver should treat `len` as advisory and bound it by the actual ATT write
+length. This data originates from a phone parsing an undocumented notification
+format that has broken roughly annually; a wrong length must drop a packet, never
+corrupt state.
+
 | Type | Name | Payload |
 |---|---|---|
 | 0x01 | NAV | `u8 maneuver, u16 dist_m, u8 next_maneuver, u16 next_dist_m, u16 eta_min, u16 remaining_100m, u8 flags, utf8 instruction` |

@@ -192,8 +192,13 @@ Char (notify)  6e400003-b5a3-f393-e0a9-e50e24dcca9e   ESP32 → phone
 | 0x04 | MEDIA | `u8 state (0 stop/1 play/2 pause), utf8 title \0 artist` |
 | 0x05 | TRIP | `u32 distance_m, u16 duration_min, u16 speed_kmh_x10, u16 max_speed_kmh_x10` |
 | 0x06 | CONFIG | `u8 brightness (0=auto, 1-100 manual), u8 units` |
+| 0x07 | TRAFFIC | segment list derived from `progressSegments` |
 
 NAV flags: bit0 nav_active, bit1 rerouting, bit2 gps_weak, bit3 arrived.
+
+`len` is the **payload** length, excluding the two header bytes. This matters:
+the NAV instruction has no length prefix and no terminator, so its extent is
+`len` minus the 11-byte fixed block.
 
 ### Maneuver codes
 
@@ -226,9 +231,23 @@ buys that away.
 3. Auto-reconnect on both sides. Test by walking out of range and back.
 
 ### Test
-Send `01 0F 03 64 00 02 50 00 0C 00 20 00 01` + "Old Madras Rd" from nRF
+Send `01 18 03 64 00 02 50 00 0C 00 20 00 01` + "Old Madras Rd" from nRF
 Connect. ESP32 serial prints: TURN_RIGHT, 100 m, next TURN_LEFT 80 m, ETA 12,
 3.2 km, active, "Old Madras Rd".
+
+As a single paste-ready string:
+
+```
+01 18 03 64 00 02 50 00 0C 00 20 00 01 4F 6C 64 20 4D 61 64 72 61 73 20 52 64
+```
+
+**Corrected 26 Aug 2026** — this example previously read `01 0F …`, and `0x0F`
+is 15, which matches nothing: not the payload (24), the frame (26), the fixed
+block (11) or the instruction (13). The payload is 11 fixed bytes plus 13 for
+"Old Madras Rd" = 24 = **`0x18`**. Every other field in the example was correct.
+
+The firmware tolerates the old string because it bounds `len` by the actual
+write length, but the Android app must send `0x18`.
 
 Walk 30 m away, come back. Reconnects unaided within 10 s.
 
@@ -286,7 +305,7 @@ Round-trip works, reconnect is automatic. → Stage 6
 
 | Condition | Display |
 |---|---|
-| No packet 5 s | Dim screen, "STALE" |
+| No packet 10 s | Dim screen, "STALE" |
 | BLE disconnected | "PHONE DISCONNECTED" |
 | nav_active=0 | Clock + trip stats. **Never a stale maneuver** |
 | rerouting | "REROUTING", suppress the arrow |
@@ -297,10 +316,13 @@ Round-trip works, reconnect is automatic. → Stage 6
    in plain ESP32 RAM. Partial sprite prevents the flicker of redrawing a large
    number every second.
 2. Draw maneuver arrows as vector paths, not bitmaps. Scalable, tiny.
-3. Watchdog: `millis() - lastPacket > 5000` → stale.
+3. Watchdog: `millis() - lastPacket > 10000` → stale. Ten seconds, not five —
+   NAV_DATA.md measured 64 s with no field changing while Maps kept posting at
+   ~1 Hz, so the threshold has to clear a long quiet stretch. Counts arrivals,
+   never value changes.
 
 ### Test
-- Unplug the phone's Bluetooth mid-navigation. Screen must change within 5 s.
+- Unplug the phone's Bluetooth mid-navigation. Screen must change within 10 s.
 - Photograph the screen at each distance band at arm's length. Anything you
   can't read in under half a second is too small.
 - Force every failure state manually and confirm none of them ever leave a
