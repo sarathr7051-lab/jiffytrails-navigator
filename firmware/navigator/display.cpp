@@ -195,22 +195,86 @@ static void drawGpsWeak(bool topRight, uint16_t fg, uint16_t bg) {
 // remaining_100m is recomputed by the phone every packet on purpose:
 // NAV_DATA.md measured progressMax drifting 7486 -> 7780 -> 7659 within 45 s,
 // so a cached remaining distance is wrong within a minute.
-static void drawFarFooter(const NavState& s) {
-  tft.fillRect(0, 194, W, 22, C_BG);
-  tft.setTextColor(C_MUTED, C_BG);
+// The band along the bottom. See bandFor() in nav_types.h for why this exists
+// and what outranks what. Geometry checked against the approach glyph, which
+// is the tallest thing above it and ends at y=184.
+static const int16_t BAND_Y = 190;
+static const int16_t BAND_H = H - BAND_Y;   // 50 px
 
-  char buf[24];
-  if (s.eta_min) {
-    snprintf(buf, sizeof(buf), "%u min", (unsigned)s.eta_min);
-    tft.setTextDatum(BL_DATUM);
-    tft.drawString(buf, 8, 212, 2);
+static const char* notifyTag(uint8_t kind) {
+  switch (kind) {
+    case NOTIFY_MESSAGE: return "MSG";
+    case NOTIFY_EMAIL:   return "MAIL";
+    case NOTIFY_ALERT:   return "ALERT";
+    default:             return "PHONE";
   }
-  if (s.remaining_100m) {
-    snprintf(buf, sizeof(buf), "%u.%u km left",
-             (unsigned)(s.remaining_100m / 10), (unsigned)(s.remaining_100m % 10));
-    tft.setTextDatum(BR_DATUM);
-    tft.drawString(buf, 312, 212, 2);
+}
+
+// Truncate to fit, ending in an ellipsis so a cut is visibly a cut rather
+// than a shorter name. Measured, never estimated — hand-guessed widths clipped
+// this display twice before.
+static void drawFitted(const char* text, int16_t x, int16_t y, int16_t maxW, uint8_t font) {
+  char buf[ALERT_TEXT_MAX + 4];
+  snprintf(buf, sizeof(buf), "%s", text);
+  if (tft.textWidth(buf, font) <= maxW) {
+    tft.drawString(buf, x, y, font);
+    return;
   }
+  size_t n = strlen(buf);
+  while (n > 1) {
+    buf[--n] = '\0';
+    char probe[ALERT_TEXT_MAX + 4];
+    snprintf(probe, sizeof(probe), "%s...", buf);
+    if (tft.textWidth(probe, font) <= maxW) { tft.drawString(probe, x, y, font); return; }
+  }
+}
+
+static void drawBand(const NavState& s, BandContent band) {
+  if (band == BAND_BLANK) {
+    tft.fillRect(0, BAND_Y, W, BAND_H, C_BG);
+    return;
+  }
+
+  if (band == BAND_FOOTER) {
+    tft.fillRect(0, BAND_Y, W, BAND_H, C_BG);
+    tft.setTextColor(C_MUTED, C_BG);
+
+    char buf[24];
+    // NAV_DATA.md measured progressMax drifting 7486 -> 7780 -> 7659 within
+    // 45 s, so a cached remaining distance is wrong within a minute.
+    if (s.eta_min) {
+      snprintf(buf, sizeof(buf), "%u min", (unsigned)s.eta_min);
+      tft.setTextDatum(BL_DATUM);
+      tft.drawString(buf, 8, 228, 2);
+    }
+    if (s.remaining_100m) {
+      snprintf(buf, sizeof(buf), "%u.%u km left",
+               (unsigned)(s.remaining_100m / 10), (unsigned)(s.remaining_100m % 10));
+      tft.setTextDatum(BR_DATUM);
+      tft.drawString(buf, 312, 228, 2);
+    }
+    return;
+  }
+
+  // CALL and NOTIFY: the whole band inverts. A large low-spatial-frequency
+  // luminance flip is the one encoding that survives vibration blur and glare
+  // on this panel, and it registers peripherally without costing a glance.
+  const bool isCall  = (band == BAND_CALL);
+  const char* tag    = isCall ? "CALL" :
+                       (s.notifySrc[0] ? s.notifySrc : notifyTag(s.notifyKind));
+  const char* body   = isCall ? s.callName : s.notifyText;
+
+  tft.fillRect(0, BAND_Y, W, BAND_H, TFT_BLACK);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.drawString(tag, 8, BAND_Y + 5, 2);
+
+  // Body gets font 4 — this is the one thing in the band worth reading, and
+  // font 2 at 700 mm is below the legible floor on a moving bike.
+  tft.setTextDatum(TL_DATUM);
+  if (body[0]) drawFitted(body, 8, BAND_Y + 21, W - 16, 4);
+  else         drawFitted(isCall ? "incoming" : "notification", 8, BAND_Y + 21, W - 16, 4);
 }
 
 static void drawIdle(const NavState& s) {
@@ -339,10 +403,18 @@ void displayRender(const NavState& s) {
 
   if (!navScreen) return;
 
-  if (scr == UI_NAV_FAR) {
-    const uint32_t footer = ((uint32_t)s.eta_min << 16) | s.remaining_100m;
-    if (footer != lastFooter) { drawFarFooter(s); lastFooter = footer; }
+  // The band is re-evaluated every frame because BAND_NOTIFY expires on a
+  // timer, not on an event — nothing arrives to tell us it is over.
+  const BandContent band = bandFor(s, scr, millis());
+  uint32_t bandKey;
+  switch (band) {
+    case BAND_FOOTER: bandKey = ((uint32_t)s.eta_min << 16) | s.remaining_100m; break;
+    case BAND_CALL:   bandKey = 0x0C000000u | s.callState; break;
+    case BAND_NOTIFY: bandKey = s.notifyAtMs | 0x40000000u; break;
+    default:          bandKey = 0; break;
   }
+  bandKey ^= (uint32_t)band << 28;
+  if (bandKey != lastFooter) { drawBand(s, band); lastFooter = bandKey; }
 
   // Rendered as given. The phone has already quantised to the NAV_DATA.md
   // bands, so the digits skip at speed; quantising again here would round a

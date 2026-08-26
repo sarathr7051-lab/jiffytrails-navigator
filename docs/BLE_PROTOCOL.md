@@ -40,6 +40,15 @@ corrupt state.
 | 0x05 | TRIP | `u32 distance_m, u16 duration_min, u16 speed_kmh_x10, u16 max_speed_kmh_x10` |
 | 0x06 | CONFIG | `u8 brightness (0 = auto, 1-100 manual), u8 units` |
 | 0x07 | TRAFFIC | segment list derived from `progressSegments` |
+| 0x08 | NOTIFY | `u8 kind, u8 src_len, utf8 src, utf8 text` |
+
+`0x08 NOTIFY` — added 26 Aug 2026. `kind`: 0 generic, 1 message, 2 email,
+3 alert. `src` is the app or sender shown as the small tag; `text` is the body
+and runs to the end of the payload.
+
+**Length-prefixed, not NUL-separated, deliberately.** `0x04 MEDIA` is the only
+row that splits on NUL, and a generic trailing-text reader silently eats its
+second field. A length prefix cannot be misread that way.
 
 NAV flags:
 

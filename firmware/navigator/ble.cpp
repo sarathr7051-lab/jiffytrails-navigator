@@ -198,9 +198,56 @@ struct PacketHandler {
   bool (*apply)(PacketReader&, NavState&);
 };
 
+// An incoming call is persistent state — it stays on screen while ringing —
+// so unlike a notification it carries no timestamp and is cleared by the phone
+// sending CALL_IDLE. If the phone dies mid-ring the link drops, and
+// DISCONNECTED outranks the band anyway.
+static bool handleCall(PacketReader& r, NavState& s) {
+  const uint8_t state = r.u8();
+  if (!r.ok()) return false;
+  if (state > CALL_ACTIVE) return false;   // undefined state, drop it
+
+  char name[ALERT_TEXT_MAX] = {0};
+  copyText(name, sizeof(name), r.cursor(), r.remaining());
+
+  s.callState = state;
+  memcpy(s.callName, name, sizeof(s.callName));
+  return true;
+}
+
+// [u8 kind][u8 src_len][src bytes][text bytes to end].
+//
+// Length-prefixed rather than NUL-separated on purpose: PKT_MEDIA's
+// "title \0 artist" is the one place in this protocol that splits on NUL, and
+// a generic trailing-text reader silently eats the second field. A length
+// prefix cannot be misread that way.
+static bool handleNotify(PacketReader& r, NavState& s) {
+  const uint8_t kind   = r.u8();
+  const uint8_t srcLen = r.u8();
+  if (!r.ok()) return false;
+  if (srcLen > r.remaining()) return false;   // claims more source than arrived
+
+  char src[ALERT_SRC_MAX] = {0};
+  copyText(src, sizeof(src), r.cursor(), srcLen);
+
+  PacketReader body(r.cursor() + srcLen, r.remaining() - srcLen);
+  char text[ALERT_TEXT_MAX] = {0};
+  copyText(text, sizeof(text), body.cursor(), body.remaining());
+
+  if (text[0] == '\0') return false;   // nothing to show; not worth a redraw
+
+  s.notifyKind = (kind > NOTIFY_ALERT) ? NOTIFY_GENERIC : kind;
+  memcpy(s.notifySrc,  src,  sizeof(s.notifySrc));
+  memcpy(s.notifyText, text, sizeof(s.notifyText));
+  s.notifyAtMs = millis();
+  return true;
+}
+
 static const PacketHandler HANDLERS[] = {
   { PKT_NAV,    handleNav    },
   { PKT_STATUS, handleStatus },
+  { PKT_CALL,   handleCall   },
+  { PKT_NOTIFY, handleNotify },
 };
 static const size_t N_HANDLERS = sizeof(HANDLERS) / sizeof(HANDLERS[0]);
 

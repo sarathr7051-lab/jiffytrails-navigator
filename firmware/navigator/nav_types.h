@@ -51,7 +51,8 @@ enum : uint8_t {
   PKT_MEDIA   = 0x04,
   PKT_TRIP    = 0x05,
   PKT_CONFIG  = 0x06,
-  PKT_TRAFFIC = 0x07
+  PKT_TRAFFIC = 0x07,
+  PKT_NOTIFY  = 0x08    // added 26 Aug 2026, see docs/BLE_PROTOCOL.md
 };
 
 // NAV flags
@@ -69,7 +70,20 @@ static const uint32_t STALE_MS = 10000;
 
 // ------------------------------------------------------------- NavState
 
-static const size_t INSTRUCTION_MAX = 64;   // 59 chars observed in the wild
+// --------------------------------------------------------------- alerts
+
+enum : uint8_t { CALL_IDLE = 0, CALL_RINGING = 1, CALL_ACTIVE = 2 };
+enum : uint8_t { NOTIFY_GENERIC = 0, NOTIFY_MESSAGE = 1, NOTIFY_EMAIL = 2, NOTIFY_ALERT = 3 };
+
+static const size_t ALERT_TEXT_MAX = 40;
+static const size_t ALERT_SRC_MAX  = 20;
+
+// A notification is transient by design. Persisting it would turn the band
+// into a second thing to read on every glance, which is the failure this
+// pattern exists to avoid.
+static const uint32_t NOTIFY_DWELL_MS = 6000;
+
+static const size_t INSTRUCTION_MAX = 64;   // 60 chars observed in the wild
 
 struct NavState {
   // --- from PKT_NAV ---
@@ -84,6 +98,14 @@ struct NavState {
 
   // --- from PKT_STATUS ---
   uint8_t  phoneBatteryPct = 0;
+
+  // --- from PKT_CALL / PKT_NOTIFY ---
+  uint8_t  callState  = CALL_IDLE;
+  char     callName[ALERT_TEXT_MAX] = {0};
+  uint8_t  notifyKind = NOTIFY_GENERIC;
+  char     notifySrc[ALERT_SRC_MAX]  = {0};
+  char     notifyText[ALERT_TEXT_MAX] = {0};
+  uint32_t notifyAtMs = 0;      // arrival time, for the dwell timeout
 
   // --- link health, owned by the watchdog ---
   bool     linkUp       = false;   // BLE connected
@@ -121,4 +143,47 @@ inline UiScreen screenFor(const NavState& s) {
   if (s.dist_m < 100) return UI_NAV_COMMITTED;
   if (s.dist_m <= 500) return UI_NAV_APPROACH;
   return UI_NAV_FAR;
+}
+
+// ---------------------------------------------------------------- the band
+
+/*
+  The strip along the bottom. It does double duty: arrival and remaining
+  distance while there is time to read them, and an inverted alert block when
+  something happens. Blank costs nothing — that is the whole point of the
+  pattern. An element that is empty in the normal case consumes no glance
+  until it fires.
+
+  Full-block inversion is used for alerts because it is the most
+  blur-and-glare-robust encoding this panel has: a large, low-spatial-frequency
+  luminance event, which is exactly what peripheral vision is built to detect.
+*/
+enum BandContent : uint8_t {
+  BAND_BLANK,    // nothing. A turn is imminent, or the link is in trouble
+  BAND_CALL,     // inverted, persists while ringing
+  BAND_NOTIFY,   // inverted, self-dismisses after NOTIFY_DWELL_MS
+  BAND_FOOTER    // arrival time and distance remaining
+};
+
+/*
+  One place decides what the band shows, for the same reason screenFor()
+  exists. The ordering is the design:
+
+  Nothing may cover the turn once committed. BUILD_PLAN Stage 9 says alerts are
+  "suppressed below 100 m to a maneuver", and that outranks every alert
+  regardless of urgency — a missed call costs nothing, a missed junction in
+  Bengaluru traffic costs a great deal.
+*/
+inline BandContent bandFor(const NavState& s, UiScreen scr, uint32_t nowMs) {
+  if (scr == UI_NAV_COMMITTED || scr == UI_NAV_NOW) return BAND_BLANK;
+  if (scr == UI_DISCONNECTED || scr == UI_STALE)    return BAND_BLANK;
+
+  // A ringing phone is persistent; you may want to pull over for it.
+  if (s.callState == CALL_RINGING) return BAND_CALL;
+
+  if (s.notifyText[0] != '\0' && (nowMs - s.notifyAtMs) < NOTIFY_DWELL_MS) {
+    return BAND_NOTIFY;
+  }
+
+  return (scr == UI_NAV_FAR) ? BAND_FOOTER : BAND_BLANK;
 }

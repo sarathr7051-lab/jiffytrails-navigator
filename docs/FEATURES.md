@@ -506,3 +506,59 @@ Two traps: **MLCCs lose most of their capacitance under DC bias** — a 10 µF
 6.3 V 0603 X5R at 5 V may deliver 2–4 µF, so specify 16 V or 25 V parts. And a
 PPTC is a **fire-prevention device, not a semiconductor protector** — time to
 trip at 2× hold is seconds.
+
+---
+
+## Alerts: calls and notifications — BUILT
+
+**Proposed:** show incoming calls and phone notifications without harming the
+navigation view.
+
+### The pattern: a band that is blank until it matters
+
+Bottom strip, y=190–240. It does double duty and therefore **costs no extra
+pixels**:
+
+| State | Band shows |
+|---|---|
+| Far from a turn, nothing happening | arrival time, distance remaining |
+| Incoming call | **whole band inverts** — black block, white text, persists while ringing |
+| Notification | same inversion, **self-dismisses after 6 s** |
+| **Under 100 m to a turn** | **blank. Always.** |
+| Link down or stale | blank |
+
+Precedence lives in one function, `bandFor()`, for the same reason `screenFor()`
+exists.
+
+### Why inversion rather than text
+
+Full-block luminance inversion is the single most blur- and glare-robust
+encoding this panel has — large, low-spatial-frequency, and detected
+peripherally without costing a glance. Small text is the opposite: it needs
+foveation, which is the resource the whole design is trying to protect.
+
+### Why alerts lose to the turn, always
+
+BUILD_PLAN Stage 9 already said "suppressed below 100 m to a maneuver", and
+that is right regardless of how urgent the alert feels. **A missed call costs
+nothing. A missed junction in Bengaluru traffic costs a great deal.** Alerts
+under 100 m are not queued for later either — by the time the turn is done the
+notification is stale, and a stale alert is noise.
+
+### Speed: deliberately NOT added
+
+Research ranked current speed as the highest-value addition — every reference
+device has it, and it is free from phone GPS. **Rejected on local knowledge:
+the Speed 400 has a speedometer six inches away.** Duplicating an instrument
+the rider already has is pure cost. Recorded so it is not re-proposed.
+
+### Protocol
+
+`0x03 CALL` was already specified and is now implemented. `0x08 NOTIFY` is new:
+`u8 kind, u8 src_len, utf8 src, utf8 text`, length-prefixed rather than
+NUL-separated because `0x04 MEDIA` is the one row that splits on NUL and a
+generic trailing-text reader eats its second field.
+
+Still refused, per the research: now-playing (text you must parse, no
+navigational value), continuous traffic display (invites study, not glance),
+persistent battery percentage (a re-glance magnet — show it below 20% only).
