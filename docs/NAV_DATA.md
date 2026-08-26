@@ -309,3 +309,119 @@ If permission is denied on Android 11+:
 adb exec-out run-as com.jiffytrails.navdump cat \
   /sdcard/Android/data/com.jiffytrails.navdump/files/navdump.log > navdump.log
 ```
+
+---
+
+## ★ Unmined fields — test these before writing more parser
+
+Researched 26 Aug 2026 against the Android 16 ProgressStyle docs and the
+decompiled One UI key set. None of these have been tested on the actual device;
+they are ranked by value-to-effort.
+
+### 1. `android.shortCriticalText` — test this first
+
+`EXTRA_SHORT_CRITICAL_TEXT`, API 36, set via
+`Notification.Builder#setShortCriticalText`. It is **Maps' own string, already
+shortened by Google to fit a status-bar chip** — the documentation's own
+examples are `"3 min"` and `"2.1 mi"`.
+
+Three reasons it is the highest-value read in the payload:
+
+- It is exactly the format a handlebar display wants, which is the answer to
+  parser rule 7 (60-char instructions against 16–20 characters of room).
+- It is **AOSP, not Samsung** — so if Maps populates it, it may resolve the
+  portability warning at the top of this document.
+- It costs one `getString`.
+
+### 2. `android.when` + `showChronometer` + `chronometerCountDown`
+
+The live-update spec names these as the way to put a countdown in the chip. If
+Maps sets `when` to the arrival timestamp, that is **ETA as epoch millis** —
+locale-proof, and it replaces regex-parsing `"Arrive 12:08 pm"` entirely.
+
+### 3. Samsung Now Bar keys not in the table above
+
+`.nowbarPrimaryInfo` and `.nowbarSecondaryInfo` are **separate** from
+`.primaryInfo` / `.secondaryInfo`. If populated they are pre-shortened for a
+smaller surface — same value as `shortCriticalText`. Also worth one line of
+logging each: `.chipExpandedText`, `.chipBgColor` (may encode severity),
+`.secondaryInfoIcon`.
+
+### 4. `Notification.FLAG_PROMOTED_ONGOING`
+
+A cleaner "this is a live nav update" test than string-sniffing. Complements
+the removal debounce rather than replacing it.
+
+### 5. `notification.actions[]`
+
+Not display data — each is a live `PendingIntent` the service can fire. A
+handlebar button could mute voice guidance. **Genuinely dangerous:** action
+indices are locale-dependent and misfiring "Exit navigation" mid-ride is the
+worst available failure. Match on action title, and require a long press.
+
+---
+
+## ★ Correction: "two things that do not exist" is wrong about the protocol
+
+The section above says there is no next-maneuver field and no lane data. That
+is true **of the notification**. It is not true of Android Auto.
+
+Reverse-engineered Maps/AA protobufs (`mrmees/open-android-auto`) show message
+`0x8006 NavigationNotification` carrying:
+
+```
+NavigationStep { NavigationManeuver maneuver; NavigationText instruction;
+                 repeated NavigationLane lanes; NavigationRoadInfo road_info; }
+NavigationManeuver { ManeuverType type; int32 roundabout_exit_number;
+                     int32 roundabout_turn_angle; }
+NavigationLaneDirection { LaneShape shape; bool is_recommended; }
+```
+
+`steps` is **repeated** — the next maneuver is in there. `ManeuverType` is a
+50-value enum that would **replace the entire icon-hash table with an integer**,
+including the keep-left / fork / sharp / ramp cases listed as "not yet
+captured", and gives roundabout exit as a structured int rather than scraped
+from `title`. `0x8007` adds time-to-next-maneuver, which the notification does
+not have.
+
+**Why it is still not the answer.** The phone runs a head-unit server on
+**TCP 5277** — the port `adb forward` targets for the Desktop Head Unit — so an
+on-device app connecting to `127.0.0.1:5277` is architecturally plausible.
+But **that server must be started by hand from Android Auto's developer-mode
+overflow menu every session**, which is fatal for a helmet-on-and-ride
+workflow. The practical version needs a Pi-class board doing USB-accessory AA.
+
+Filed as: the only honest source for lane guidance and next-maneuver, at
+roughly 50× the effort of everything else here. Worth knowing before investing
+further in the icon-hash table.
+
+---
+
+## What to stop extracting
+
+A reviewer pushed back on three things in this document. Two of the arguments
+are good.
+
+**Drop the `largeIcon` hash column.** It is a second hash of the same maneuver
+`chipIcon` already identifies — two tables, one bit of information, double the
+maintenance every time Maps changes its glyphs.
+
+**`progressSegments` is beautiful and wrong for this device.** It is the most
+expensive thing in the payload to parse (Bundle array, colour-int lookup,
+segment counts that change underneath you), it renders as a multi-colour bar
+that cannot be read in under a second, and — the decisive point — **a rider
+cannot act on it.** You cannot reroute from a handlebar, and on a motorcycle
+you filter through the red section anyway. If anything survives, reduce the
+whole array to one boolean: heavy traffic within 2 km, yes or no.
+
+This retroactively justifies the traffic bar being absent from the shipped
+display. It was dropped because `NavState` had no field for it; it should stay
+dropped on merit.
+
+**The route progress bar costs three defensive mechanisms** — drift (rule 3),
+reroute reset, and silent route replacement (rule 6) — to render "you are 40%
+there". ETA says the same thing in one field with none of the defence. Keep
+reading `progressMax` for route-replacement detection; stop drawing the bar.
+
+**Not accepted:** the same reviewer ranked GPS speed as the top addition.
+Rejected — the Speed 400 has a speedometer six inches away. See FEATURES.md.
