@@ -284,8 +284,20 @@ solid shoulders is a shear plane — nothing to unwind.
 
 Roughly 94 × 58 × 20 mm, landscape.
 
-- **PETG or ASA, never PLA.** PLA softens near 55 °C; a case in Indian sun
-  exceeds that and sags.
+- **ASA, not PETG.** Updated 26 Aug 2026 — PETG is no longer good enough here.
+  PLA softens near 55 °C, but **PETG's HDT is only 65–80 °C and its Tg 75–85 °C**,
+  which sits inside the estimated sealed-enclosure interior of 53–70 °C in
+  Bengaluru sun. ASA gives ~105 °C service, better UV stability, and does not
+  yellow. Print it light-coloured: an 18 °C interior difference has been measured
+  between otherwise identical dark-grey and light-grey enclosures.
+
+  **The display is the real thermal limit, not the case and not the battery.**
+  2.8" ILI9341 modules are rated **operating −20 to +70 °C**, and solar radiation
+  raises display surface temperature **40–50 °C above ambient**. A documented
+  case had a 50 °C-rated panel reach **90 °C in sun and black out completely**,
+  with repeated exposure leaving permanent "solar clearing" spots. A quick-release
+  mount so the unit comes off when parked is a legitimate engineering answer —
+  it is effectively what Beeline ships.
 - **Form-in-place gasket** — a 2 × 1.5 mm groove filled with clear RTV and cured
   with the case closed over cling film. Perfect match for about ₹30.
 - **Window** — 2 mm polycarbonate bonded to the *inside* of the bezel, so water

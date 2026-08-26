@@ -314,3 +314,195 @@ no compromise on either side.
 [khd]: https://github.com/kyleturman/home-dashboard
 [re]: https://github.com/FluxGarage/RoboEyes
 [chr]: https://github.com/fbiego/chronos-esp32
+
+### Decision — DEFERRED, 26 Aug 2026
+
+**Skipped for now, to be built later.** The bike side is unfinished and the
+sunlight gate is unresolved; adding a second product now is how projects die.
+
+Sarath asked specifically whether a mic and speaker can be added to this board.
+**Answer: yes, and it buys push-to-talk — not a wake word.**
+
+| Part | ~₹ | Notes |
+|---|---|---|
+| INMP441 I2S mic | 400 | Audio streams as I2S DMA chunks straight out over WebSocket. Never buffered whole, so no PSRAM needed. |
+| MAX98357A + speaker | 500 | Have the server send low-bitrate PCM so the ESP32 decodes nothing. |
+
+Flow: button → stream to own server → Whisper → LLM → text/audio back. Working
+repos exist for exactly this on plain ESP32 and ESP32-C3.
+
+What it will **not** do is always-on "hey buddy" — that needs the AFE, that
+needs PSRAM, and no external part fixes it. If that turns out to matter, the
+answer is a **$15–20 ESP32-S3-DevKitC-1-N16R8** as a separate desk unit, leaving
+this board on the bike.
+
+Start with the visual half — dashboard, briefing, notification mirror,
+RoboEyes. It needs no parts at all and proves the idea before any money is spent.
+
+---
+
+## Power: battery vs cable — CABLE, NO BATTERY
+
+**Proposed:** run from the bike now, add a battery later so it works when the
+bike is off.
+
+### The charger can't do what it looks like it can
+
+The LOLIN32's charge IC is a **TP4054**; the regulator is an **ME6211**
+(3.3 V, 500 mA LDO). The board's 5 V pin is **just VBUS** — it reads 0 V on
+battery — which means the ME6211's input is the **BAT node**, i.e. the load
+hangs off the charger's output.
+
+**There is no power-path IC.** That topology has a specific documented failure:
+the charger terminates when current falls to C/10, and it cannot tell charge
+current from load current. With ~200 mA of load against a ~50 mA threshold, it
+**never terminates**, and the cell sits float-held at 4.2 V indefinitely.
+
+**There is also no battery protection of any kind** — no over-discharge, no
+over-current, no cell temperature sensing. TP4054 has no NTC pin. All protection
+would have to come from a protected cell.
+
+*Verify in 60 seconds:* unpowered, check continuity from the JST "+" pad to the
+ME6211 input, and from the 5 V pad to the same pin. If BAT+ beeps and 5 V does
+not, the topology is confirmed.
+
+### Runtime — an earlier claim corrected
+
+An earlier guess that the backlight would limit this to about an hour was
+**wrong**. Measured LOLIN32 draw is 55.7 mA awake at 3.7 V; add 35–80 mA for
+connected BLE, 6–10 mA for the display controller, 60–100 mA for the backlight.
+Call it **200 mA**.
+
+Usable capacity is ~80% of rated, because the ME6211 needs ~3.56 V in at that
+load:
+
+| Cell | Runtime @200 mA |
+|---|---|
+| 1000 mAh | ~4 h |
+| 2000 mAh | ~8 h |
+
+So runtime was never the problem. **Fit is:** a 2000 mAh pouch is 10.2 mm thick
+in a 20 mm enclosure that already holds a 2.8" TFT and a headered LOLIN32.
+
+### ★ Safety — do not put a LiPo in this enclosure
+
+Not primarily a fire argument. Thermal runaway needs 150 °C+; solar heating
+will never get there. The realistic outcomes, in order:
+
+1. **The cell becomes a consumable.** Battery University: 60 °C at 100% charge
+   leaves **60% capacity after three months**. This device float-holds at 4.2 V
+   in a hot box — the worst square on that table.
+2. **Pouch swelling in a sealed rigid box.** A pouch has no CID, no PTC, no
+   calibrated vent. It protects itself *by swelling*. In sealed PETG it has
+   nowhere to go but into the PCB.
+3. **Charging above 45 °C on every sunny day.** This is the one path that does
+   lead somewhere dangerous — lithium plating creates internal shorts that
+   initiate runaway later, at normal temperatures. Cell datasheets say charge
+   0–45 °C; estimated parked interior is **53–63 °C light PETG, 65–70 °C dark**.
+   The TP4054 will charge a 60 °C cell without complaint.
+
+### The thermal finding that outranks the battery question
+
+**The display fails before anything else.** 2.8" ILI9341 modules are rated
+**operating −20 to +70 °C**. Solar radiation raises display surface temperature
+**40–50 °C above ambient**, and a documented case had a 50 °C-rated panel reach
+**90 °C in sun and black out completely**, with repeated exposure causing
+permanent "solar clearing" spots.
+
+**PETG is also wrong.** HDT 65–80 °C, Tg 75–85 °C — inside the estimated
+interior range. **Use light-coloured ASA:** better UV stability, ~105 °C
+service, no yellowing. This supersedes the PETG guidance in `HARDWARE.md`.
+
+### What the industry does
+
+The **Chigee AIO-5 Lite** — the closest commercial analogue, permanently
+handlebar-mounted, always-on, IP67, rated −20 to +65 °C — **contains no battery
+at all** and runs on bike power. Thinkware dashcams use supercapacitors and ship
+a thermal protection mode that degrades above 65 °C, a manufacturer conceding
+in-vehicle temperatures routinely exceed that. Garmin Zumo XT publishes
+operating −15 to +55 °C but **charging 0 to +45 °C**.
+
+### Decision: cable power, no battery
+
+The device does not need one. NVS is already **power-fail safe** by design —
+entries are written atomically with a CRC and an incomplete write is discarded
+on next boot — so a sudden power cut costs nothing.
+
+**Build order:**
+
+1. **Get off USB.** Solder bike switched 5 V to the LOLIN32's 5 V and GND pads;
+   the micro-USB connector is not a vibration-rated interconnect. Add
+   **SMBJ6.0A** TVS (*not* 5.0A — that sits inside the USB tolerance band and
+   will cook), 220 µF **hybrid/polymer** cap (a standard 85 °C electrolytic
+   dries out fast at 60 °C), 100 nF ceramics, ferrite bead, 1 A polyfuse.
+2. **Measure, don't estimate.** A USB power meter inline, and a logging
+   thermometer sealed in the enclosure parked in sun for a week. Both numbers
+   above are estimates and both decide the design.
+3. **Fix thermal** — light ASA, ePTFE vent, backlight on PWM.
+4. **Graceful shutdown, if wanted.** See the sizing below — the trick is to shed
+   load first, which turns a supercapacitor subsystem into a single capacitor.
+
+### The Triumph socket — verified from the handbook
+
+The Speed 400 / Scrambler 400 X owner's handbook, p.64 and the fuse tables:
+
+- **5 V output, loads up to 2.4 A** — 8× this device's draw.
+- **Fuse 8, USB socket, 5 A**, in fuse box 1 under the seat.
+
+**Use the factory socket rather than tapping 12 V.** Its buck converter *is* the
+transient barrier: load-dump energy is absorbed there, not downstream. Tapping
+raw 12 V means personally solving 6–16 V continuous, **18 V for 400 ms**,
+**26 V for 60 s of jump start** (DC — no TVS helps), and ~35–40 V clamped load
+dump, for no benefit this device needs. Note the popular cheap MP1584 module is
+28 V max and **fails the jump-start case outright**.
+
+Motorcycles differ from cars here in a way that helps: a permanent-magnet
+alternator has no field winding to de-excite, so the classic 400 ms field-decay
+load dump does not exist in the same form. But the battery is small — a
+**YTX9-BS, 12 V 8 Ah** — so the rail is less stiff and switching transients from
+horn, indicators and fan are proportionally larger than in a car.
+
+**Still unverified: whether the socket is ignition-switched or always live.**
+The handbook does not say; the fuse layout suggests it sits behind the main
+relay, and owners report it only works with the engine running. That is
+inference. **Measure it** — a USB power meter answers it and gives the real
+current limit at the same time. It matters: if the socket is always live, a dev
+board drawing even 10 mA flattens an 8 Ah battery in a couple of weeks parked.
+
+### Hold-up sizing — shed load first
+
+An earlier figure of "2200 µF ≈ 50 ms" was optimistic. The arithmetic is
+C = I·Δt/ΔV, and with the backlight and radio still running at ~250 mA against a
+1 V usable drop, **20 ms needs 5,000 µF** and 50 ms needs 12,500 µF. That is a
+lot of electrolytic to strap to a handlebar.
+
+**So shed load in the first millisecond.** The ignition-sense interrupt kills the
+backlight and stops the radio, dropping to ~50 mA — and then **20 ms needs only
+1,000 µF**. One capacitor, not a subsystem.
+
+**Do not use a supercapacitor.** An uncharged supercap is a short at power-on;
+against the socket's 2.4 A limit it will either trip the limit or make it fold
+back and never start. It needs a soft-start path and an isolating diode — a real
+design, not a two-part addition.
+
+**Better still, avoid needing hold-up at all:** write state to NVS when it
+*changes*, debounced, during normal riding. Then key-off requires no write and
+the problem evaporates. Keep volatile state in RTC slow memory, which survives
+deep sleep without touching flash.
+
+Note the ESP32's own brownout detector trips at ~2.43–2.80 V, *below* the 3.0 V
+recommended minimum — by the time it fires the chip has been out of spec for a
+while. It is a last-resort reset, not a power-fail warning. Generate the warning
+upstream with the ignition-sense pin.
+
+### The protection stack, under ₹100
+
+PPTC (0.5 A hold, ≥6 V rated) → **SMBJ6.0A** TVS → P-channel FET for reverse
+polarity (~10–25 mV drop, versus 0.35–0.45 V for a Schottky, which this rail
+cannot spare) → pi filter (10 µF – ferrite – 10 µF + 100 nF) → 1000 µF hold-up
+behind an isolating Schottky.
+
+Two traps: **MLCCs lose most of their capacitance under DC bias** — a 10 µF
+6.3 V 0603 X5R at 5 V may deliver 2–4 µF, so specify 16 V or 25 V parts. And a
+PPTC is a **fire-prevention device, not a semiconductor protector** — time to
+trip at 2× hold is seconds.
