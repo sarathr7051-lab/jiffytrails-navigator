@@ -92,6 +92,25 @@ different batch may want the other one; try both before assuming a fault.
 and an MB102 do not hold 40 MHz cleanly. Worth raising again once the build is
 soldered — but retest, do not assume.
 
+Worth knowing why 27 is a sensible fallback rather than an arbitrary one:
+**27 MHz is TFT_eSPI's documented ceiling for *reading pixels back* from the
+display**, not for writing. For write-only rendering the library's own guidance
+is that "40MHz seems to be OK with ILI9341 displays", with 80 MHz the point
+where the controller starts failing. Since this project never calls
+`readPixel`, 40 MHz should be reachable once the wiring is soldered — and that
+is **48% more bandwidth**, which matters directly for any moving graphics.
+
+For reference, a 320×240 RGB565 frame is 153,600 bytes = 1,228,800 bits:
+
+| SPI clock | Wire time per full frame | Theoretical max FPS |
+|---|---|---|
+| 27 MHz | 45.5 ms | 22.0 |
+| 40 MHz | 30.7 ms | 32.6 |
+
+Measured TFT_eSPI `fillScreen` on ESP32 + ILI9341 at 40 MHz comes in at 31.2 ms
+— about 98% of theoretical, which confirms the SPI wire is the wall and the
+ESP32 can saturate it.
+
 ## Toolchain
 
 Arduino IDE 2.x **from arduino.cc** — not the Microsoft Store build, which is
