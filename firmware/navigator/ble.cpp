@@ -283,9 +283,61 @@ static const size_t N_HANDLERS = sizeof(HANDLERS) / sizeof(HANDLERS[0]);
 
 // ---------------------------------------------------------------- framing
 
+/*
+  Debug convenience: accept a frame written as ASCII hex as well as raw bytes.
+
+  nRF Connect's write dialog sends UTF-8 text on some builds, so pasting
+  "01 0B 03 64 ..." arrives as the characters rather than the bytes — the
+  device then sees type 0x30 ('0') with a nonsense length and drops every
+  packet. That cost a debugging session.
+
+  The discriminator is unambiguous: real packet types are 0x01-0x08, and any
+  ASCII hex digit is >= '0' (0x30). Spaces, tabs, commas and newlines are
+  skipped so a human-readable string pastes directly. Returns 0 if the buffer
+  is not clean hex text, in which case it is treated as binary as before.
+*/
+static size_t decodeHexText(const uint8_t* in, size_t n, uint8_t* out, size_t cap) {
+  size_t k = 0;
+  int hi = -1;
+
+  for (size_t i = 0; i < n; i++) {
+    const char c = static_cast<char>(in[i]);
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ',') continue;
+
+    int v;
+    if      (c >= '0' && c <= '9') v = c - '0';
+    else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+    else return 0;                       // not hex text after all
+
+    if (hi < 0) { hi = v; continue; }
+    if (k >= cap) return 0;              // longer than any real packet
+    out[k++] = static_cast<uint8_t>((hi << 4) | v);
+    hi = -1;
+  }
+
+  return (hi < 0) ? k : 0;               // an odd digit count is malformed
+}
+
+static void handleBinaryFrame(const uint8_t* frame, size_t n);
+
 static void handleFrame(const uint8_t* frame, size_t n) {
   if (g_state == nullptr) return;
 
+  if (n >= 4 && frame[0] >= '0') {
+    uint8_t decoded[96];
+    const size_t dn = decodeHexText(frame, n, decoded, sizeof(decoded));
+    if (dn >= FRAME_HEADER) {
+      BLE_LOG("[ble] hex-text write, decoded to %u bytes\n", (unsigned)dn);
+      handleBinaryFrame(decoded, dn);
+      return;
+    }
+  }
+
+  handleBinaryFrame(frame, n);
+}
+
+static void handleBinaryFrame(const uint8_t* frame, size_t n) {
   if (n < FRAME_HEADER) {
     BLE_LOG("[ble] runt frame, %u bytes\n", (unsigned)n);
     return;
