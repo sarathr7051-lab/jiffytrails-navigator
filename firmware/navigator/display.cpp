@@ -260,6 +260,63 @@ static const char* notifyTag(uint8_t kind) {
 // Truncate to fit, ending in an ellipsis so a cut is visibly a cut rather
 // than a shorter name. Measured, never estimated — hand-guessed widths clipped
 // this display twice before.
+/*
+  Word-wrapped text, up to `maxLines`, ellipsised only if it still will not fit.
+
+  Breaks on spaces so a road name survives intact. The last line takes the
+  ellipsis, so what gets lost is the tail rather than the middle. Font 4 is
+  26 px, so two lines cost 56 px including the gap.
+*/
+static void drawWrapped(const char* text, int16_t x, int16_t y,
+                        int16_t maxW, uint8_t maxLines, uint16_t fg) {
+  static const uint8_t FONT = 4;
+  static const int16_t LINE_H = 28;
+
+  tft.setTextColor(fg, C_BG);
+  tft.setTextDatum(TL_DATUM);
+
+  char rest[INSTRUCTION_MAX + 4];
+  snprintf(rest, sizeof(rest), "%s", text);
+
+  for (uint8_t line = 0; line < maxLines; line++) {
+    if (rest[0] == '\0') return;
+
+    if (tft.textWidth(rest, FONT) <= maxW) {      // the remainder fits
+      tft.drawString(rest, x, y + line * LINE_H, FONT);
+      return;
+    }
+
+    if (line + 1 == maxLines) {                   // last line: ellipsise
+      char cut[INSTRUCTION_MAX + 4];
+      fitText(rest, cut, sizeof(cut), maxW, FONT);
+      tft.drawString(cut, x, y + line * LINE_H, FONT);
+      return;
+    }
+
+    // Longest word-boundary prefix that fits.
+    int brk = -1;
+    for (int i = 0; rest[i] != '\0'; i++) {
+      if (rest[i] != ' ') continue;
+      char save = rest[i];
+      rest[i] = '\0';
+      const bool fits = tft.textWidth(rest, FONT) <= maxW;
+      rest[i] = save;
+      if (!fits) break;
+      brk = i;
+    }
+    if (brk < 0) {                                // one unbreakable word
+      char cut[INSTRUCTION_MAX + 4];
+      fitText(rest, cut, sizeof(cut), maxW, FONT);
+      tft.drawString(cut, x, y + line * LINE_H, FONT);
+      return;
+    }
+
+    rest[brk] = '\0';
+    tft.drawString(rest, x, y + line * LINE_H, FONT);
+    memmove(rest, rest + brk + 1, strlen(rest + brk + 1) + 1);
+  }
+}
+
 static void drawFitted(const char* text, int16_t x, int16_t y, int16_t maxW, uint8_t font) {
   char buf[ALERT_TEXT_MAX + 4];
   snprintf(buf, sizeof(buf), "%s", text);
@@ -282,6 +339,22 @@ static void drawFitted(const char* text, int16_t x, int16_t y, int16_t maxW, uin
 static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
   const bool inverted = (scr == UI_NAV_NOW);
   const uint16_t groundBg = inverted ? C_INV_BG : C_BG;
+
+  /*
+    An alert grows upward into the footer, because for the two seconds it is up
+    the message is what the rider wants and the arrival time is not. It never
+    grows past the main row: the arrow and the distance are the instruction and
+    nothing may cover them.
+
+    The approach glyph is the tallest thing above the band and ends at 176, so
+    that band starts at 180. The far row ends at 152 and can give 24 px more,
+    which is the difference between one line of a WhatsApp message and two.
+  */
+  const int16_t alertTop =
+      (band == BAND_CALL || band == BAND_NOTIFY)
+          ? ((scr == UI_NAV_APPROACH) ? 180 : 156)
+          : BAND_Y;
+  const int16_t alertH = H - alertTop;
 
   if (band == BAND_BLANK) {
     tft.fillRect(0, BAND_Y, W, BAND_H, groundBg);
@@ -347,17 +420,26 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
                        (s.notifySrc[0] ? s.notifySrc : notifyTag(s.notifyKind));
   const char* body   = isCall ? s.callName : s.notifyText;
 
-  tft.fillRect(0, BAND_Y, W, BAND_H, C_INV_BG);
+  tft.fillRect(0, alertTop, W, alertH, C_INV_BG);
   tft.setTextColor(C_INV_FG, C_INV_BG);
 
   tft.setTextDatum(TL_DATUM);
-  tft.drawString(tag, 8, BAND_Y + 5, 2);
+  tft.drawString(tag, 8, alertTop + 4, 2);
 
   // Body gets font 4 — this is the one thing in the band worth reading, and
-  // font 2 at 700 mm is below the legible floor on a moving bike.
-  tft.setTextDatum(TL_DATUM);
-  if (body[0]) drawFitted(body, 8, BAND_Y + 21, W - 16, 4);
-  else         drawFitted(isCall ? "incoming" : "notification", 8, BAND_Y + 21, W - 16, 4);
+  // font 2 at 700 mm is below the legible floor on a moving bike. Two lines
+  // when the band is tall enough, which is the difference between a message
+  // being readable and merely being present.
+  const char* shown = body[0] ? body : (isCall ? "incoming" : "notification");
+  const uint8_t lines = (alertH >= 70) ? 2 : 1;
+
+  // drawWrapped clears against C_BG, and inside the band the ground is
+  // inverted. Swapped rather than parameterised because every other caller
+  // draws on the normal ground and should not have to say so.
+  const uint16_t saveBg = C_BG;
+  C_BG = C_INV_BG;
+  drawWrapped(shown, 8, alertTop + 22, W - 16, lines, C_INV_FG);
+  C_BG = saveBg;
 }
 
 // Never a maneuver here, whatever the last packet said — BLE_PROTOCOL.md.
@@ -479,10 +561,12 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   if (s.gpsWeak()) maxW -= GPS_RESERVE_W;
 
   if (s.instruction[0]) {
-    char line[INSTRUCTION_MAX + 4];
-    fitText(s.instruction, line, sizeof(line), maxW, 4);
-    tft.setTextDatum(TL_DATUM);
-    tft.drawString(line, 8, textY, 4);
+    // Two lines where the layout allows it. "BOT Bridge Jct onto Koc..." lost
+    // the road name to the ellipsis, which is the half that matters - rule 7
+    // says truncating from the end destroys exactly the useful part. Wrapping
+    // on a word boundary keeps it, and the far screen has 60 px of headroom
+    // above the main row that was doing nothing.
+    drawWrapped(s.instruction, 8, textY, maxW, far ? 2 : 1, C_FG);
   }
   if (s.gpsWeak()) drawGpsWeak(true, C_MUTED, C_BG);
 

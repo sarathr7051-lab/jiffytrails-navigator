@@ -78,10 +78,20 @@ class NavListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
-        if (sbn.packageName != MAPS_PKG) return
-        // Not the end of the route yet. Maps removes and re-posts constantly
-        // during navigation; the parser starts a timer and poll() decides.
-        parser.onRemoved(sbn)
+        if (sbn.packageName == MAPS_PKG) {
+            // Not the end of the route yet. Maps removes and re-posts constantly
+            // during navigation; the parser starts a timer and poll() decides.
+            parser.onRemoved(sbn)
+            return
+        }
+
+        // A call ends by its notification being removed - nothing is ever posted
+        // to say it is over. Without this the band held the caller's name on the
+        // handlebar indefinitely, which is the stale-state failure the whole
+        // design exists to prevent, just wearing a different hat.
+        if (sbn.notification?.category == Notification.CATEGORY_CALL) {
+            LinkService.sendPacket(PacketBuilder.call(0, ""), "CALL idle")
+        }
     }
 
     private fun handleIfMaps(sbn: StatusBarNotification) {
