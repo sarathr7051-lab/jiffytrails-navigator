@@ -519,12 +519,22 @@ void displaySetNight(bool on) {
       a MOSFET (see HARDWARE.md) — and that work is needed on the Sharp Memory
       LCD path too, where a front light must be dimmable from day one.
     */
-    C_BG = TFT_BLACK; C_FG = 0xAD95;          // ~70% white
+    /*
+      Raised from ~70% to ~88% after bench testing at night. The theory said
+      dimmer text saves dark adaptation; the panel disagreed. This is a cheap
+      TN-type ILI9341 whose black level washes out when viewed off-axis from
+      above — which is exactly the handlebar viewing angle — so the background
+      is never truly black and a 70% grey did not stand far enough off it.
+      Contrast against a grey ground beat absolute light output. The proper fix
+      is still backlight PWM, which lowers both together and would let the text
+      go back down.
+    */
+    C_BG = TFT_BLACK; C_FG = 0xDEFB;          // ~88% white
     // The alert band still has to be an unmissable luminance event, but a
     // full-white block at night is the flash this whole mode exists to avoid.
     // Grey block, black text: still a step change against a near-black ground.
-    C_INV_BG = 0xAD95; C_INV_FG = TFT_BLACK;
-    C_MUTED  = 0x6B4D;                        // ~45%, still below the text
+    C_INV_BG = 0xDEFB; C_INV_FG = TFT_BLACK;
+    C_MUTED  = 0x8410;                        // ~50%, clearly below the text
   } else {
     C_BG = TFT_WHITE; C_FG = TFT_BLACK;
     C_INV_BG = TFT_BLACK; C_INV_FG = TFT_WHITE;
