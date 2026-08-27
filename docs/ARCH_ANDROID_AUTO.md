@@ -794,3 +794,31 @@ Verified by direct reading:
 [bmoto]: https://beeline.co/pages/beeline-moto
 [brs]: https://zod.github.io/brouter/developers/android_service.html
 [gh]: https://github.com/graphhopper/graphhopper
+
+---
+
+## Addendum: the coverage check, run (27 Aug 2026)
+
+The study says settle coverage before writing code. Settled. Overpass, same
+Bengaluru bbox `FEATURES.md` used (12.80,77.40,13.20,77.85):
+
+| Query | Ways |
+|---|---:|
+| Arterials (`motorway\|trunk\|primary\|secondary`, incl. `_link`) | **9,398** |
+| ...of those, tagged `bridge` | **765** |
+| ...of those, tagged `layer` | **929** |
+
+**This is not the 0.52% story, and the difference is structural rather than
+just larger.** `turn:lanes` had to be present on nearly every way a rider
+approaches a junction on, so 0.52% meant the feature was blank 99.5% of the
+time. `bridge` only has to be present on ways that *are* bridges — and most
+roads are not bridges. 765 tagged bridge segments across the metro is a dense
+dataset, not a sparse one.
+
+What this does **not** measure is the fraction of real flyovers that carry the
+tag; Overpass cannot answer that, because an untagged flyover is
+indistinguishable from a road. So the honest statement is: there is plenty of
+bridge data, and whether it is *complete* is unknown. That is a far better
+starting position than lane guidance ever had, and it is checkable on the first
+ride — a flyover the display draws flat is a missing tag, and it is fixable in
+OSM by the person who found it.
