@@ -473,3 +473,86 @@ One UI dependency. Worth it — a truncated road name is barely better than none
 a `dumpsys notification` capture alongside `category=navigation`. So the
 Android 16 Live Updates path is definitely what this phone is on, and that flag
 is a cleaner "this is a live nav update" test than sniffing content.
+
+---
+
+## Complete extras dump — 27 Aug 2026, and the next-maneuver question closed
+
+Captured live from `dumpsys notification --noredact` on the S24+ during a route,
+at a moment when Maps was rendering **"Then →"** in its own UI. Every extra:
+
+```
+android.title                = "Head toward Moulana Azad Rd"
+android.text                 = null
+android.subText              = "Arrive 3:40 pm"
+android.shortCriticalText    = ""            (set, but empty)
+android.progress             = 0
+android.progressMax          = 12729
+android.progressPoints       = []
+android.progressSegments     = [{length=12729, colorInt=-16731905, id=0}]
+android.progressTrackerIcon  = RESOURCE gs_progress
+android.largeIcon            = BITMAP 101x101
+android.template             = Notification$ProgressStyle
+android.showChronometer      = false
+android.showWhen             = false
+android.requestPromotedOngoing = true
+android.reduced.images       = true
+android.styledByProgress     = false
+android.infoText             = null
+android.remoteInputHistory   = null
+
+android.ongoingActivityNoti.primaryInfo        = "0 m"
+android.ongoingActivityNoti.secondaryInfo      = "towards Moulana Azad Rd"
+android.ongoingActivityNoti.nowbarPrimaryInfo  = "0 m"
+android.ongoingActivityNoti.nowbarSecondaryInfo= "towards Moulana Azad Rd"
+android.ongoingActivityNoti.chipExpandedText   = "0 m"
+android.ongoingActivityNoti.chipIcon           = BITMAP 135x135
+android.ongoingActivityNoti.nowbarIcon         = BITMAP 135x135
+android.ongoingActivityNoti.secondIcon         = BITMAP 135x135
+android.ongoingActivityNoti.chipBgColor        = -16777216
+android.ongoingActivityNoti.style              = 1
+android.ongoingActivityNoti.actionType         = 1
+```
+
+### The next maneuver is not there. Tested, not assumed.
+
+Every text field says the same thing. And the three 135×135 bitmaps were
+classified against each other while "Then →" was on screen:
+
+```
+PROBE-ICONS chip=CONTINUE second=CONTINUE nowbar=CONTINUE (all same)
+```
+
+**`secondIcon` is a duplicate**, despite the name — the assumption in the field
+table above is correct. Maps computes the next maneuver and renders it in its own
+UI without publishing it anywhere a listener can reach.
+
+This closes the question properly. "Two things that do not exist" was inferred
+from ride logs; it is now verified against a complete dump at the exact moment
+the data would have had to be present.
+
+The only source that carries a next maneuver remains the Android Auto protocol
+(`repeated NavigationStep`), and its practical cost is unchanged — see the
+correction section above.
+
+### Also confirmed here
+
+- **`shortCriticalText` is an empty string, not absent.** Maps sets the field and
+  leaves it blank, so it is a deliberate non-use rather than an oversight.
+- **`progressSegments` had one segment** covering the whole route on this trip —
+  no traffic detail to read even if we wanted it.
+- **`requestPromotedOngoing = true`** alongside `FLAG_PROMOTED_ONGOING` in flags.
+
+### Operational note: reinstalling the app silently breaks the listener
+
+After every `installDebug` the listener stays *listed* in
+`enabled_notification_listeners` and in `dumpsys notification`, but delivers
+nothing. It looks bound and is not. Toggle it, or from a shell:
+
+```
+adb shell cmd notification disallow_listener com.jiffytrails.navlink/com.jiffytrails.navlink.NavListenerService
+adb shell cmd notification allow_listener    com.jiffytrails.navlink/com.jiffytrails.navlink.NavListenerService
+```
+
+This wasted a debugging round: the symptom is a display frozen on old data with
+a healthy-looking link, which is indistinguishable from a firmware fault.

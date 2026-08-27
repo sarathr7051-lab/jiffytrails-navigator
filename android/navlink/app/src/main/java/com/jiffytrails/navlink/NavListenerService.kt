@@ -198,5 +198,4 @@ class NavListenerService : NotificationListenerService() {
      */
     private fun flatten(s: String): String =
         s.replace(Regex("""\s+"""), " ").trim()
-    }
 }

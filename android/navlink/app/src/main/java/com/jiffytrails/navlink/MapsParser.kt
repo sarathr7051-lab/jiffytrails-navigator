@@ -634,11 +634,32 @@ class MapsParser(context: Context) {
         if (sig == lastProbe) return
         lastProbe = sig
 
+        /*
+          Is secondIcon the *next* maneuver?
+
+          NAV_DATA.md assumes nowbarIcon and secondIcon merely duplicate chipIcon,
+          but that was never tested and the name is suspicious. A full extras dump
+          confirmed no *text* field anywhere carries a next maneuver, yet Maps
+          plainly renders "Then ->" in its own UI, so that glyph exists somewhere
+          and three same-sized bitmaps is where to look.
+
+          If these two ever classify differently while "Then" is on screen, the
+          next maneuver is available after all — which would close the one gap
+          BLE_PROTOCOL.md has reserved fields waiting for.
+        */
+        val chipCode = Maneuvers.classify(ctx, iconOf(ex, K_CHIP_ICON)).code
+        val secondCode = Maneuvers.classify(ctx, iconOf(ex, K_SECOND_IC)).code
+        val nowbarCode = Maneuvers.classify(ctx, iconOf(ex, K_NOWBAR_IC)).code
+
         Log.i(TAG, "PROBE shortCriticalText=${short ?: "<null>"}" +
                 "  showChronometer=$showChrono countDown=$countDown" +
                 "  when=${if (whenMs > 0) "${whenDeltaMin}min from now" else "<unset>"}" +
                 "  nowbarPrimary=${nowbarPri ?: "<null>"} nowbarSecondary=${nowbarSec ?: "<null>"}" +
                 "  flags=0x${Integer.toHexString(n.flags)}")
+
+        Log.i(TAG, "PROBE-ICONS chip=${Mv.name(chipCode)} second=${Mv.name(secondCode)} " +
+                "nowbar=${Mv.name(nowbarCode)} " +
+                if (secondCode != chipCode) "*** SECOND DIFFERS ***" else "(all same)")
     }
 
     // ------------------------------------------------------------- helpers
