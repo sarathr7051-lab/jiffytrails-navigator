@@ -63,6 +63,19 @@ static uint16_t C_INV_BG = TFT_BLACK;
 static uint16_t C_INV_FG = TFT_WHITE;
 static bool     nightMode = false;
 
+/*
+  One accent, one meaning: amber is "live / attention" and appears nowhere else.
+  It is deliberately NOT part of the day/night swap - amber is the one hue that
+  survives a dimmed backlight and a tinted visor, which is why it is the only
+  colour the night palette keeps.
+
+  It is also never load-bearing on its own. Every state amber marks differs in
+  SHAPE too (filled disc vs hollow ring), because a photochromic visor turns
+  amber to grey and a rider who can only see shape must still be able to read
+  the screen.
+*/
+static const uint16_t C_ACCENT = 0xFC40;   // #FF8A00
+
 // ----------------------------------------------------------------- layout
 //
 // Screen is two columns: maneuver on the left, distance on the right.
@@ -579,12 +592,270 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   else     drawManeuver(tft, GLYPH_APP_X, GLYPH_APP_Y, GLYPH_APP_S, s.maneuver, C_FG, C_BG);
 }
 
+// --------------------------------------------------------- panel watchdog
+
+/*
+  The panel can lose its configuration while the ESP32 carries on running.
+
+  Observed twice on the bench: the display renders correctly, then goes blank
+  white, and stays white through a reflash — but comes back after unplugging
+  and replugging power. That is the signature of the ILI9341 reverting to its
+  power-on state (display off, sleep in) while the MCU keeps writing pixels to
+  a controller that has stopped listening. A brownout on the 3.3 V rail will do
+  it; so will a glitch on the reset line.
+
+  Requiring a power cycle to recover is tolerable on a desk and not tolerable
+  on a motorcycle, where the supply is a 12 V accessory rail and the whole
+  assembly is being shaken. So the device asks.
+
+  MISO is wired to GPIO 19, so RDDPM (0x0A) can be read back. Bit 2 is DISON
+  (display on) and bit 4 is SLPOUT (awake); both are set on a healthy panel and
+  clear after an unwanted reset. Three consecutive bad reads are required before
+  acting, because a single garbled read on a marginal bus should not trigger a
+  visible re-init.
+*/
+static const uint32_t PANEL_CHECK_MS   = 2000;
+static const uint8_t  PANEL_OK_MASK    = 0x14;   // DISON | SLPOUT
+static const uint8_t  PANEL_FAIL_LIMIT = 3;
+
+static uint32_t lastPanelCheckMs = 0;
+static uint8_t  panelFailStreak  = 0;
+static uint32_t panelRecoveries  = 0;
+
+/*
+  Whether the panel can be READ at all.
+
+  The watchdog asks the panel over MISO whether it is still configured. On this
+  build MISO is not wired - it was removed deliberately, and the panel works
+  perfectly without it, because the display is write-only in normal use.
+
+  A floating MISO reads back as garbage, which never matches DISON|SLPOUT, so
+  the watchdog scored three failures at 2 s apiece and re-initialised a healthy
+  panel every six seconds. That is a visible full-screen flash, on a device
+  whose entire promise is that what it shows can be trusted.
+
+  So the watchdog now proves it can see before it is allowed to act: it reads
+  the register once at boot, immediately after init, when the panel is KNOWN to
+  be on and awake. If that read does not come back correct, reads are
+  impossible on this wiring and the watchdog disables itself for the session.
+
+  The failure it was written for - the panel silently losing its configuration
+  while the ESP32 keeps running - is real and was observed. Recovering from it
+  needs MISO. Until that wire goes back, the honest position is no watchdog
+  rather than one that fires at random, and the log says so out loud.
+*/
+static bool     panelReadable    = false;
+
+
+// ------------------------------------------------------------------ boot
+/*
+  The startup sequence.
+
+  Two rules shaped this, both from the same place: a splash that outlives its
+  boot is a splash the rider learns to resent.
+
+    1. The ring reports REAL stages - a third when the panel is up, two thirds
+       when the radio is up, closed when the phone is actually connected. It
+       genuinely stalls at two thirds while the phone connects, and that stall
+       is information. A spinner says "I don't know"; this says "I know exactly
+       where I am".
+
+    2. It gives up. If nothing has connected by BOOT_LINK_WAIT_MS the ring
+       closes anyway and the waypoint stays HOLLOW rather than filling amber -
+       so the mark itself reports the link state, in shape as well as colour,
+       and hands straight over to the normal disconnected screen.
+
+  The artwork is the logo: a route line tracing a lowercase j, with the tittle
+  as the destination. It is drawn from the same three-segment polyline at every
+  size, so the boot mark and the wordmark are visibly one idea rather than two.
+
+  Cost: the largest dirty region here is the 88 px ring bounding box, about
+  7,700 px, which at ~1,700 px/ms is 4.5 ms. Everything else is far smaller.
+  The whole sequence is under a second unless it is deliberately waiting.
+*/
+
+// The logo polyline, in the 64x64 box the mark is designed in.
+struct Pt { int16_t x, y; };
+static const Pt TRAIL[] = { {38, 26}, {38, 44}, {28, 54}, {14, 54} };
+static const uint8_t TRAIL_N = sizeof(TRAIL) / sizeof(TRAIL[0]);
+static const Pt TRAIL_DOT = {38, 11};
+
+static const int16_t MARK_CX = 160, MARK_CY = 88;   // ring and mark centre
+static const int16_t RING_R  = 44;
+static const int16_t MARK_S  = 60;                  // logo box, inside the ring
+
+static const int16_t WORD1_Y = 164;   // "JIFFY",  font 2, 16 px tall
+static const int16_t WORD2_Y = 184;   // "TRAILS", font 4, 26 px tall
+static const int16_t RULE_Y = 220, RULE_HALF = 56;
+
+/*
+  Hold the boot layout to its own arithmetic. Three of the four layout bugs this
+  project has shipped were a row overlapping another row by a number nobody had
+  written down, so every gap that matters is a compile error if it closes.
+*/
+static_assert(MARK_CY + RING_R < WORD1_Y,        "ring overlaps the wordmark");
+static_assert(WORD1_Y + 16 <= WORD2_Y,           "JIFFY overlaps TRAILS");
+static_assert(WORD2_Y + 26 <= RULE_Y,            "TRAILS overlaps the rule");
+static_assert(RULE_Y + 2 <= 240,                 "rule falls off the screen");
+static_assert(MARK_CX - RULE_HALF >= 0,          "rule falls off the left edge");
+// The mark must sit inside the ring with clearance, or the logo touches its own
+// progress indicator and the two read as one shape.
+static_assert(MARK_S / 2 + 4 < RING_R,           "mark does not fit inside the ring");
+
+static uint16_t bootSweep = 0;      // degrees of ring drawn so far
+
+static inline int16_t markX(int c) { return MARK_CX - MARK_S / 2 + (int)((long)c * MARK_S / 64); }
+static inline int16_t markY(int c) { return MARK_CY - MARK_S / 2 + (int)((long)c * MARK_S / 64); }
+
+/*
+  A stroke of width w offset along the PERPENDICULAR, not along x.
+
+  maneuvers.cpp offsets its strokes horizontally, which is fine there because no
+  glyph stroke is near-horizontal. The logo's final segment is exactly
+  horizontal, and a horizontally-offset stroke would collapse every copy onto
+  the same line and draw it 1 px thick.
+*/
+static void strokeThick(int x0, int y0, int x1, int y1, int w, uint16_t c) {
+  const float dx = x1 - x0, dy = y1 - y0;
+  const float len = sqrtf(dx * dx + dy * dy);
+  if (len < 0.5f) return;
+  const float nx = -dy / len, ny = dx / len;
+  for (int i = -w / 2; i <= w / 2; i++) {
+    tft.drawLine(x0 + (int)(nx * i), y0 + (int)(ny * i),
+                 x1 + (int)(nx * i), y1 + (int)(ny * i), c);
+  }
+}
+
+// Text drawn glyph by glyph with extra advance. Tracking is the only second
+// "weight" this library has: one font, widely tracked, reads as a different
+// weight beside the same font set tight.
+static void drawTracked(const char* s, int16_t cx, int16_t y, uint8_t font,
+                        int16_t extra, uint16_t fg) {
+  int16_t total = 0;
+  for (const char* p = s; *p; ++p) total += tft.textWidth(String(*p), font) + extra;
+  total -= extra;
+
+  tft.setTextColor(fg, C_BG);
+  tft.setTextDatum(TL_DATUM);
+  int16_t x = cx - total / 2;
+  for (const char* p = s; *p; ++p) {
+    char one[2] = { *p, 0 };
+    tft.drawString(one, x, y, font);
+    x += tft.textWidth(String(*p), font) + extra;
+  }
+}
+
+// Ring arc from the top, clockwise. Overlapping dots rather than an arc call,
+// for the same reason the U-turn uses them: it is the primitive that is
+// definitely present, and the overlap hides the quantisation.
+static void ringArc(int fromDeg, int toDeg, uint16_t c, int dotR) {
+  for (int a = fromDeg; a <= toDeg; a += 2) {
+    const float r = a * 3.14159265f / 180.0f;
+    tft.fillCircle(MARK_CX + (int)(RING_R * sinf(r)),
+                   MARK_CY - (int)(RING_R * cosf(r)), dotR, c);
+  }
+}
+
+// The trail, drawn to a fraction of its own length. Round joints at every
+// vertex reached, which is what keeps a two-segment corner from notching.
+static void drawTrail(uint8_t pct, uint16_t c) {
+  const int w = MARK_S * 7 / 64;             // 7% stroke, as designed
+  float total = 0, seg[TRAIL_N];
+  for (uint8_t i = 1; i < TRAIL_N; i++) {
+    const float dx = TRAIL[i].x - TRAIL[i-1].x, dy = TRAIL[i].y - TRAIL[i-1].y;
+    seg[i] = sqrtf(dx * dx + dy * dy);
+    total += seg[i];
+  }
+  float want = total * pct / 100.0f;
+
+  tft.fillCircle(markX(TRAIL[0].x), markY(TRAIL[0].y), w / 2, c);
+  for (uint8_t i = 1; i < TRAIL_N && want > 0; i++) {
+    const float f = (want >= seg[i]) ? 1.0f : (want / seg[i]);
+    const int ex = TRAIL[i-1].x + (int)((TRAIL[i].x - TRAIL[i-1].x) * f);
+    const int ey = TRAIL[i-1].y + (int)((TRAIL[i].y - TRAIL[i-1].y) * f);
+    strokeThick(markX(TRAIL[i-1].x), markY(TRAIL[i-1].y), markX(ex), markY(ey), w, c);
+    tft.fillCircle(markX(ex), markY(ey), w / 2, c);
+    want -= seg[i];
+  }
+}
+
+void displayBootBegin() {
+  tft.fillScreen(C_BG);
+  bootSweep = 0;
+
+  // Ring track. Present from the first frame so the ring reads as filling a
+  // known distance rather than growing to an unknown one.
+  ringArc(0, 360, C_MUTED, 1);
+
+  drawTracked("JIFFY",  MARK_CX, WORD1_Y, 2, 3, C_MUTED);
+  drawTracked("TRAILS", MARK_CX, WORD2_Y, 4, 1, C_FG);
+
+  // ~330 ms, eased out: fast away, settling into the corner.
+  static const uint8_t EASE[] = { 0, 33, 57, 74, 85, 92, 97, 100 };
+  for (uint8_t i = 0; i < sizeof(EASE); i++) {
+    drawTrail(EASE[i], C_FG);
+    delay(40);
+  }
+}
+
+void displayBootStage(uint8_t stage) {
+  const uint16_t target = (stage >= 3) ? 360 : stage * 120;
+  while (bootSweep < target) {
+    const uint16_t next = (bootSweep + 8 > target) ? target : bootSweep + 8;
+    ringArc(bootSweep, next, C_FG, 2);
+    bootSweep = next;
+    delay(8);
+  }
+}
+
+void displayBootFinish(bool linked) {
+  displayBootStage(3);
+
+  /*
+    The waypoint arrives last, and it is the only element that reports the link.
+    Filled amber means a phone is connected; a hollow ring means searching -
+    the same two shapes the idle screen's status pip uses, so the vocabulary is
+    learned once.
+
+    The three radii are a one-pixel overshoot. It costs 6 ms and it is the
+    single detail that makes the thing feel built rather than assembled.
+  */
+  const int16_t dx = markX(TRAIL_DOT.x), dy = markY(TRAIL_DOT.y);
+  const int16_t r  = MARK_S * 6 / 64;
+  if (linked) {
+    const int16_t pop[] = { r / 2, r + 1, r };
+    for (uint8_t i = 0; i < 3; i++) {
+      tft.fillCircle(dx, dy, pop[i], (i == 2) ? C_ACCENT : C_FG);
+      delay(45);
+    }
+  } else {
+    tft.fillCircle(dx, dy, r, C_FG);
+    tft.fillCircle(dx, dy, r - 2, C_BG);       // hollow: searching
+  }
+
+  // A rule growing out from the centre is the cheapest possible "ready".
+  for (int16_t half = 4; half <= RULE_HALF; half += 8) {
+    tft.fillRect(MARK_CX - half, RULE_Y, half * 2, 2, C_MUTED);
+    delay(12);
+  }
+  delay(260);
+  displayInvalidate();
+}
+
 // ------------------------------------------------------------------- api
 
 void displayBegin() {
   tft.init();
   tft.setRotation(ROTATION);
   tft.fillScreen(C_BG);
+
+  // Probe read capability while the answer is known. The panel has just been
+  // initialised, so it IS on and awake; if the register does not say so, the
+  // read path is broken rather than the panel.
+  const uint8_t probe = tft.readcommand8(0x0A);
+  panelReadable = ((probe & PANEL_OK_MASK) == PANEL_OK_MASK);
+  Serial.printf("display: panel read probe 0x%02X - watchdog %s\n", probe,
+                panelReadable ? "armed" : "DISABLED (MISO not wired)");
 
   dist.setColorDepth(16);
   sprite_ok = (dist.createSprite(SPR_W, SPR_H) != nullptr);
@@ -707,37 +978,11 @@ void displaySetNight(bool on) {
   displayInvalidate();
 }
 
-// --------------------------------------------------------- panel watchdog
-
-/*
-  The panel can lose its configuration while the ESP32 carries on running.
-
-  Observed twice on the bench: the display renders correctly, then goes blank
-  white, and stays white through a reflash — but comes back after unplugging
-  and replugging power. That is the signature of the ILI9341 reverting to its
-  power-on state (display off, sleep in) while the MCU keeps writing pixels to
-  a controller that has stopped listening. A brownout on the 3.3 V rail will do
-  it; so will a glitch on the reset line.
-
-  Requiring a power cycle to recover is tolerable on a desk and not tolerable
-  on a motorcycle, where the supply is a 12 V accessory rail and the whole
-  assembly is being shaken. So the device asks.
-
-  MISO is wired to GPIO 19, so RDDPM (0x0A) can be read back. Bit 2 is DISON
-  (display on) and bit 4 is SLPOUT (awake); both are set on a healthy panel and
-  clear after an unwanted reset. Three consecutive bad reads are required before
-  acting, because a single garbled read on a marginal bus should not trigger a
-  visible re-init.
-*/
-static const uint32_t PANEL_CHECK_MS   = 2000;
-static const uint8_t  PANEL_OK_MASK    = 0x14;   // DISON | SLPOUT
-static const uint8_t  PANEL_FAIL_LIMIT = 3;
-
-static uint32_t lastPanelCheckMs = 0;
-static uint8_t  panelFailStreak  = 0;
-static uint32_t panelRecoveries  = 0;
 
 void displayTick() {
+  // A watchdog that cannot observe cannot protect. See panelReadable.
+  if (!panelReadable) return;
+
   const uint32_t now = millis();
   if (now - lastPanelCheckMs < PANEL_CHECK_MS) return;
   lastPanelCheckMs = now;

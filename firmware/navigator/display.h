@@ -23,6 +23,16 @@ void displayInvalidate();
 // inversions rather than becoming ordinary.
 void displaySetNight(bool on);
 
+// The boot sequence. displayBootBegin draws the mark and wordmark; the two
+// stage calls advance a progress ring that reports REAL progress, not a timer;
+// displayBootFinish closes it and reports the link state in the waypoint dot -
+// filled amber for connected, hollow for searching. Pass whatever linkUp
+// actually says: a splash that claims a connection it does not have is the
+// same lie as a stale maneuver, just prettier.
+void displayBootBegin();
+void displayBootStage(uint8_t stage);   // 1 = panel up, 2 = radio up, 3 = linked
+void displayBootFinish(bool linked);
+
 // Call every loop. Periodically asks the panel whether it is still configured
 // and re-initialises it if not — see the comment on displayTick() for why this
 // device needs a display watchdog at all.

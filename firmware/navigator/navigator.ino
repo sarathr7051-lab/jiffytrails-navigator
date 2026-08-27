@@ -56,10 +56,30 @@ void setup() {
   Serial.println(F("\nJiffyTrails navigator — stage 5, BLE link"));
 
   displayBegin();
-  displayInvalidate();
+
+  displayBootBegin();
+  displayBootStage(1);            // panel is up - the ring can honestly say so
 
   bleBegin(&state, DEVICE_NAME);
   Serial.printf("advertising as \"%s\"\n", DEVICE_NAME);
+  displayBootStage(2);            // radio is up
+
+  /*
+    Now wait for a phone, but not forever. The ring stalling at two thirds is
+    the honest report of "advertising, nobody has answered" - but a rider who
+    left their phone at home must not be left looking at a splash, so this
+    gives up after BOOT_LINK_WAIT_MS and hands over to the normal screen, which
+    says PHONE DISCONNECTED and means it.
+
+    bleTick() and watchdogTick() run here so linkUp is real rather than assumed.
+  */
+  const uint32_t waitUntil = millis() + 2500;
+  while (millis() < waitUntil && !state.linkUp) {
+    bleTick();
+    watchdogTick(state);
+    delay(20);
+  }
+  displayBootFinish(state.linkUp);
 }
 
 void loop() {
