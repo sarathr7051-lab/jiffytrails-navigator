@@ -146,6 +146,9 @@ static bool     lastGpsWeak  = false;
 static char     lastInstruction[INSTRUCTION_MAX] = {0};
 static int32_t  lastDist     = -1;
 static uint32_t lastFooter   = 0xFFFFFFFFu;
+// The idle and arrived screens repaint wholesale, so they track their alert
+// separately from lastFooter, which encodes a nav-screen band value.
+static uint32_t lastIdleKey = 0;
 static uint16_t lastClockKey = 0xFFFF;   // idle screen has no other change key
 static uint8_t  lastBattery  = 0xFF;
 
@@ -466,35 +469,87 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
 // stopped at a signal, and it is the one thing worth showing when there is no
 // route. It comes from the phone: the device has no RTC and no network, so
 // there is no other source, and without one this screen has nothing to say.
+/*
+  The idle screen. The device at rest, and the only screen with no safety
+  constraint on it - which makes it the one place a bit of character is free.
+
+  Two rails only, x=16 and x=304, and everything sits on one of them. Mixing
+  centred and rail-aligned elements is the loudest homemade tell there is, and
+  the old version did exactly that: three centred lines stacked down the middle.
+
+  The clock moved from font 7 to font 8. Font 7 is the seven-segment face, and
+  nothing else turns a considered instrument into a 1994 clock radio as fast.
+  Font 8 is also 75 px against font 7's 48, so it is both better looking and
+  more readable at arm's length - the rare change with no trade.
+
+  It is right-aligned to the rail rather than centred, for a reason beyond
+  taste: a centred clock shifts sideways whenever the hour goes from one digit
+  to two, and a number that moves when its value changes reads as unstable.
+*/
+static const int16_t IDLE_RAIL_L  = 16, IDLE_RAIL_R = 304;
+static const int16_t IDLE_LABEL_Y = 16;    // font 2, 16 tall
+static const int16_t IDLE_CLOCK_Y = 44;    // font 8, 75 tall
+static const int16_t IDLE_TRAIL_Y = 148;   // the road, 3 px
+static const int16_t IDLE_NOTE_Y  = 180;   // font 2
+static const int16_t IDLE_DOT_X   = 152, IDLE_DOT_R = 6;
+
+static_assert(IDLE_LABEL_Y + 16 <= IDLE_CLOCK_Y, "PARKED overlaps the clock");
+static_assert(IDLE_CLOCK_Y + 75 <= IDLE_TRAIL_Y, "clock overlaps the trail");
+static_assert(IDLE_TRAIL_Y + 3  <= IDLE_NOTE_Y,  "trail overlaps the note");
+static_assert(IDLE_NOTE_Y  + 16 <= H,            "note falls off the screen");
+static_assert(IDLE_DOT_X + IDLE_DOT_R < IDLE_RAIL_R, "rider dot escapes the rail");
+
+static void drawTracked(const char* s, int16_t cx, int16_t y, uint8_t font,
+                        int16_t extra, uint16_t fg);
+
 static void drawIdle(const NavState& s) {
   tft.fillScreen(C_BG);
 
+  // Tracked small caps against a large tight numeral - the instrument idiom,
+  // and the only second "weight" a single-weight font library has.
+  {
+    const char* label = "PARKED";
+    int16_t w = 0;
+    for (const char* p = label; *p; ++p) w += tft.textWidth(String(*p), 2) + 3;
+    drawTracked(label, IDLE_RAIL_L + (w - 3) / 2, IDLE_LABEL_Y, 2, 3, C_MUTED);
+  }
+
+  tft.setTextColor(C_FG, C_BG);
+  tft.setTextDatum(TR_DATUM);
   if (s.clockValid) {
     char buf[8];
     snprintf(buf, sizeof(buf), "%u:%02u", (unsigned)s.clockHour, (unsigned)s.clockMin);
-    tft.setTextColor(C_FG, C_BG);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString(buf, W / 2, 104, 7);   // font 7, 48 px — digits and colon
+    tft.drawString(buf, IDLE_RAIL_R, IDLE_CLOCK_Y, 8);
   } else {
     // No clock yet. Say what is actually true rather than inventing a time.
-    tft.setTextColor(C_FG, C_BG);
-    tft.setTextDatum(MC_DATUM);
     tft.setTextSize(2);
-    tft.drawString("READY", W / 2, 104, 4);
+    tft.drawString("READY", IDLE_RAIL_R, IDLE_CLOCK_Y + 20, 4);
     tft.setTextSize(1);
   }
 
+  /*
+    The road, with the rider resting in a gap in it. This is the same drawing
+    as the boot mark and the logo - a line with something on it - so the device
+    reads as one idea rather than three screens that happen to share a font.
+
+    It is not decoration standing in for content: the gap is where you are, and
+    a parked bike is exactly a rider stopped on a road.
+  */
+  tft.fillRect(IDLE_RAIL_L, IDLE_TRAIL_Y, IDLE_DOT_X - 12 - IDLE_RAIL_L, 3, C_FG);
+  tft.fillRect(IDLE_DOT_X + 12, IDLE_TRAIL_Y, IDLE_RAIL_R - (IDLE_DOT_X + 12), 3, C_FG);
+  tft.fillCircle(IDLE_DOT_X, IDLE_TRAIL_Y + 1, IDLE_DOT_R, C_FG);
+
   tft.setTextColor(C_MUTED, C_BG);
-  tft.setTextDatum(MC_DATUM);
-  tft.drawString("no route", W / 2, 168, 2);
+  tft.setTextDatum(TL_DATUM);
+  tft.drawString("no route", IDLE_RAIL_L, IDLE_NOTE_Y, 2);
 
   // Battery below 20% only. A permanent percentage is a re-glance magnet —
   // something you check because it is there, not because you need it.
   if (s.phoneBatteryPct && s.phoneBatteryPct <= 20) {
     char buf[20];
     snprintf(buf, sizeof(buf), "phone %u%%", (unsigned)s.phoneBatteryPct);
-    tft.setTextDatum(BR_DATUM);
-    tft.drawString(buf, 312, 232, 2);
+    tft.setTextDatum(TR_DATUM);
+    tft.drawString(buf, IDLE_RAIL_R, IDLE_NOTE_Y, 2);
   }
 }
 
@@ -888,6 +943,31 @@ void displayRender(const NavState& s) {
     changed = (clockKey != lastClockKey) || (s.phoneBatteryPct != lastBattery);
   }
 
+  const BandContent band = bandFor(s, scr, millis());
+
+  /*
+    Idle and arrived paint the WHOLE screen, so an alert arriving or expiring
+    there is a chrome change rather than a band change - the alert covers the
+    clock, and when it expires the clock has to come back.
+
+    This is also the wiring that was missing. drawBand has had a branch for
+    UI_IDLE and UI_ARRIVED since alerts were added, giving a message the top of
+    the screen instead of a 50 px strip, and it was unreachable: the early
+    return on !navScreen sat above the band block, so the band never ran on
+    those two screens at all. The geometry was written and never called, which
+    is why the full-screen idle notification was reported as missing. It was.
+  */
+  const bool fullScreenAlert = (scr == UI_IDLE || scr == UI_ARRIVED);
+
+  // Keyed on the alert's identity, not just its kind. Testing the kind alone
+  // would repaint an unchanged call band on every loop iteration - which at
+  // this loop rate is a solid flicker - and would also miss a second caller
+  // arriving while the first band is still up, since both are BAND_CALL.
+  const uint32_t idleKey = (band == BAND_CALL)   ? (0x0C000000u | s.callState)
+                         : (band == BAND_NOTIFY) ? (s.notifyAtMs | 0x40000000u)
+                         : 0;
+  if (fullScreenAlert && idleKey != lastIdleKey) changed = true;
+
   if (changed) {
     drawChrome(s, scr);
     lastScreen   = scr;
@@ -901,11 +981,19 @@ void displayRender(const NavState& s) {
     lastFooter   = 0xFFFFFFFFu;
   }
 
+  // Idle and arrived: the chrome above has just repainted the screen, so an
+  // alert only needs painting on top of it. Nothing else on these screens
+  // changes per-frame, so there is no distance field to fall through to.
+  if (fullScreenAlert) {
+    if (changed && idleKey) drawBand(s, band, scr);
+    lastIdleKey = idleKey;
+    return;
+  }
+
   if (!navScreen) return;
 
   // The band is re-evaluated every frame because BAND_NOTIFY expires on a
   // timer, not on an event — nothing arrives to tell us it is over.
-  const BandContent band = bandFor(s, scr, millis());
   uint32_t bandKey;
   switch (band) {
     case BAND_FOOTER: bandKey = ((uint32_t)s.eta_min << 16) | s.remaining_100m; break;
