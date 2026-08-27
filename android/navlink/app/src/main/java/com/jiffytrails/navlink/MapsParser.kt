@@ -73,6 +73,9 @@ class MapsParser(context: Context) {
         private const val K_NOWBAR_PRI = "android.ongoingActivityNoti.nowbarPrimaryInfo"
         private const val K_NOWBAR_SEC = "android.ongoingActivityNoti.nowbarSecondaryInfo"
 
+        // "towards Moulana Azad Rd" -> "Moulana Azad Rd"
+        private val RE_TOWARDS = Regex("""^\s*(towards|toward|to)\s+""", RegexOption.IGNORE_CASE)
+
         // AOSP.
         private const val K_TITLE = "android.title"
         private const val K_TEXT = "android.text"
@@ -159,6 +162,21 @@ class MapsParser(context: Context) {
     /** Last good route figures, held only to freeze the bar while rerouting. */
     private var heldRemaining100m = 0
     private var heldEtaMin = 0
+
+    /**
+     * Last distance that actually parsed.
+     *
+     * Rule 2 says primaryInfo is not always a distance - mid-turn it carries
+     * the road name or the maneuver text instead. Defaulting those packets to
+     * zero put "0 m" on the handlebar while the rider was still 40 m from the
+     * junction, and alternated with the correct value as primaryInfo flipped
+     * back and forth. Zero on that display means turn now.
+     *
+     * Holding the last good value freezes the number for a beat instead of
+     * lying about it. Route end and arrival are signalled by navActive and the
+     * arrived flag, so nothing depends on distance decaying to zero.
+     */
+    private var heldDistM = 0
     private var lastProgressMax = 0
 
     private var lastManeuver = -1
@@ -222,6 +240,7 @@ class MapsParser(context: Context) {
             else -> navigatingUpdate(
                 title, primary, secondary, subText, progress, progressMax, icon,
                 whenEtaMinutes(n, ex),
+                str(ex, K_NOWBAR_SEC),
             )
         }
 
@@ -297,6 +316,7 @@ class MapsParser(context: Context) {
         arrivalMinuteOfDay = null
         heldRemaining100m = 0
         heldEtaMin = 0
+        heldDistM = 0
         lastProgressMax = 0
         lastManeuver = -1
         lastProbe = null
@@ -357,10 +377,15 @@ class MapsParser(context: Context) {
         progressMax: Int,
         icon: Icon?,
         whenEta: Int?,
+        nowbarSec: String?,
     ): NavUpdate {
         val stripped = RE_DIST_PREFIX.replace(title, "")            // rule 1
         val match = Maneuvers.classify(ctx, icon, title)
-        val distM = parseDistance(primary) ?: 0                     // rule 2
+        // Rule 2: a packet with no readable distance holds the last one rather
+        // than claiming zero. See heldDistM.
+        val parsedDist = parseDistance(primary)
+        if (parsedDist != null) heldDistM = parsedDist
+        val distM = parsedDist ?: heldDistM
 
         // Rule 3: recompute every packet, never cache. `progressMax` drifted
         // 7486 -> 7780 -> 7659 -> 7486 over 45 s of ordinary riding.
@@ -376,7 +401,7 @@ class MapsParser(context: Context) {
             distM = distM,
             etaMin = etaMin,
             remaining100m = remaining100m,
-            instruction = chooseInstruction(stripped, secondary, primary, match.known),
+            instruction = chooseInstruction(stripped, secondary, primary, match.known, nowbarSec),
             navActive = true,
             // Nothing in the payload reports GPS quality, and NAV_DATA.md tested
             // and rejected rising distance as a proxy - it drifts 30 -> 50 m at a
@@ -410,6 +435,7 @@ class MapsParser(context: Context) {
             arrivalMinuteOfDay = null
             heldRemaining100m = 0
             heldEtaMin = 0
+            heldDistM = 0
             lastArrived = false
         }
     }
@@ -429,7 +455,21 @@ class MapsParser(context: Context) {
         secondary: String?,
         primary: String?,
         maneuverKnown: Boolean,
+        nowbarSec: String? = null,
     ): String {
+        // Measured 27 Aug 2026: nowbarSecondaryInfo carries a pre-shortened road
+        // name, phrased "towards Moulana Azad Rd". Samsung sized it for the Now
+        // Bar, so it is already inside the ~16-20 characters this display can
+        // render legibly - which is the whole problem rule 7 describes. Strip the
+        // connector and prefer it over truncating a 60-character instruction.
+        //
+        // It is a One UI key, so this deepens the Samsung dependency. Worth it: a
+        // truncated road name is barely better than none.
+        nowbarSec?.let { nb ->
+            val road = RE_TOWARDS.replace(nb, "").trim()
+            if (road.isNotEmpty() && road.length <= GLANCE_CHARS) return road
+        }
+
         val road = secondary
             ?.let { RE_SLASH_SPACES.replace(it, "/") }               // "Rd / St" -> "Rd/St"
             ?.takeIf { it.isNotEmpty() && !echoes(it, stripped) }
