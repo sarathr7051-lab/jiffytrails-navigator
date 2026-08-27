@@ -256,14 +256,20 @@ static void drawFitted(const char* text, int16_t x, int16_t y, int16_t maxW, uin
   }
 }
 
-static void drawBand(const NavState& s, BandContent band) {
+// `scr` decides what "blank" means. The sub-30 m screen is drawn inverted, so
+// clearing the band to C_BG painted a white stripe across the bottom of a black
+// screen - which read as a large empty alert rather than as nothing at all.
+static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
+  const bool inverted = (scr == UI_NAV_NOW);
+  const uint16_t groundBg = inverted ? C_INV_BG : C_BG;
+
   if (band == BAND_BLANK) {
-    tft.fillRect(0, BAND_Y, W, BAND_H, C_BG);
+    tft.fillRect(0, BAND_Y, W, BAND_H, groundBg);
     return;
   }
 
   if (band == BAND_FOOTER) {
-    tft.fillRect(0, BAND_Y, W, BAND_H, C_BG);
+    tft.fillRect(0, BAND_Y, W, BAND_H, groundBg);
     tft.setTextColor(C_MUTED, C_BG);
 
     char buf[24];
@@ -498,7 +504,7 @@ void displayRender(const NavState& s) {
     default:          bandKey = 0; break;
   }
   bandKey ^= (uint32_t)band << 28;
-  if (bandKey != lastFooter) { drawBand(s, band); lastFooter = bandKey; }
+  if (bandKey != lastFooter) { drawBand(s, band, scr); lastFooter = bandKey; }
 
   // Rendered as given. The phone has already quantised to the NAV_DATA.md
   // bands, so the digits skip at speed; quantising again here would round a

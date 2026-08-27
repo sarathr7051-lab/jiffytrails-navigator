@@ -162,8 +162,23 @@ inline UiScreen screenFor(const NavState& s) {
   if (s.showArrival) return UI_ARRIVED;
   if (!s.navActive()) return UI_IDLE;
   if (s.rerouting()) return UI_REROUTING;
-  if (s.dist_m <  30) return UI_NAV_NOW;
-  if (s.dist_m < 100) return UI_NAV_COMMITTED;
+  /*
+    A distance of zero is not a distance.
+
+    Maps reports "continue, 0 m" whenever the next maneuver is where you already
+    are — most obviously at the moment of departure, when the route ahead is
+    still kilometres long. Treating that as "under 30 m" put the rider on the
+    inverted turn-now screen, with no road name, no ETA and no distance
+    remaining, while stationary at the start of a 3.4 km route.
+
+    Claiming an imminent turn on the strength of a zero is the dangerous
+    direction to be wrong in, so zero falls through to the far screen, which is
+    the one that can actually say something useful — road name, arrival time and
+    distance to go.
+  */
+  if (s.dist_m == 0)   return UI_NAV_FAR;
+  if (s.dist_m <  30)  return UI_NAV_NOW;
+  if (s.dist_m < 100)  return UI_NAV_COMMITTED;
   if (s.dist_m <= 500) return UI_NAV_APPROACH;
   return UI_NAV_FAR;
 }
