@@ -89,6 +89,13 @@ void baseline(NavState& s) {
   s.stale        = false;
   s.lastPacketMs = millis();
   s.packetCount++;
+
+  // Clear the arrival latch. It outranks everything below it in screenFor(),
+  // and the watchdog that normally clears it is not running during a demo - so
+  // starting a demo just after a real arrival would have pinned the display to
+  // the ARRIVED screen and ignored every keypress.
+  s.showArrival  = false;
+  s.arrivedAtMs  = 0;
   s.night        = false;
   s.clockValid   = true;
   s.clockHour    = 18;
