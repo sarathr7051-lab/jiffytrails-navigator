@@ -90,15 +90,35 @@ static const int16_t ARROW_ZONE = SPR_X - 4;
 // The arrow is the instruction; the number is the qualifier, and it should not
 // be the larger of the two. Boxes now start at parity and grow past it as the
 // turn approaches, which also makes the progression easier to feel.
-static const int16_t GLYPH_FAR_X =  8, GLYPH_FAR_Y = 88,  GLYPH_FAR_S = 84;
-static const int16_t GLYPH_APP_X =  6, GLYPH_APP_Y = 86,  GLYPH_APP_S = 96;
+// The arrow and the number are one row and must share a centre line. They did
+// not: on the far screen the sprite centred at y=100 while the glyph box centred
+// at y=130, so the number floated 30 px above the arrow and the row read as two
+// unrelated objects. Each Y below is derived as (row centre - box/2), and the
+// static_asserts hold that arithmetic true if anyone moves a row.
+//
+//   far        row centre 110   sprite 70..150   glyph 68..152
+//   approach   row centre 128   sprite 88..168   glyph 80..176
+//   committed  row centre 128   sprite 88..168   glyph 76..180
+static const int16_t GLYPH_FAR_X =  8, GLYPH_FAR_Y = 68,  GLYPH_FAR_S = 84;
+static const int16_t GLYPH_APP_X =  6, GLYPH_APP_Y = 80,  GLYPH_APP_S = 96;
 static const int16_t GLYPH_BIG_X =  4, GLYPH_BIG_Y = 76,  GLYPH_BIG_S = 104;
 static_assert(GLYPH_FAR_X + GLYPH_FAR_S <= 108, "far glyph runs under the sprite");
 static_assert(GLYPH_BIG_X + GLYPH_BIG_S <= ARROW_ZONE, "glyph runs under the sprite");
 static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the sprite");
 
-static const int16_t DIST_Y_FAR   = 60;   // far band lifts the number to make
-static const int16_t DIST_Y_OTHER = 88;   // room for the footer line
+// Sprite origins. SPR_H is 80, so the row centre is DIST_Y + 40.
+static const int16_t DIST_Y_FAR   = 70;   // centre 110, clears the taller footer
+static const int16_t DIST_Y_OTHER = 88;   // centre 128
+
+// Arrow and number must sit on the same centre line, or the row reads as two
+// unrelated objects. Checked here so a future nudge to either cannot drift.
+static_assert(GLYPH_FAR_Y + GLYPH_FAR_S / 2 == DIST_Y_FAR   + SPR_H / 2, "far row misaligned");
+static_assert(GLYPH_APP_Y + GLYPH_APP_S / 2 == DIST_Y_OTHER + SPR_H / 2, "approach row misaligned");
+static_assert(GLYPH_BIG_Y + GLYPH_BIG_S / 2 == DIST_Y_OTHER + SPR_H / 2, "committed row misaligned");
+
+// Nothing in the main row may run under the band.
+static_assert(GLYPH_APP_Y + GLYPH_APP_S <= 190, "approach glyph runs into the band");
+static_assert(GLYPH_BIG_Y + GLYPH_BIG_S <= 190, "committed glyph runs into the band");
 
 // ------------------------------------------------------------ redraw state
 //
@@ -270,21 +290,51 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
 
   if (band == BAND_FOOTER) {
     tft.fillRect(0, BAND_Y, W, BAND_H, groundBg);
-    tft.setTextColor(C_MUTED, C_BG);
 
-    char buf[24];
+    /*
+      Two cells: a large figure with a small unit beside it, baselines aligned.
+
+      Font 2 is 16 px tall. At the ~700 mm a handlebar sits from the eye that is
+      about 16 arc-minutes — ISO 15008's absolute floor for a *static* display,
+      and this one vibrates in sunlight. The figures move to font 6 at 48 px and
+      the units stay at font 4, which is the cycling-computer pattern: the
+      number carries the value and the unit is a label you learn once and stop
+      reading.
+
+      Baselines are shared so the pair reads as one object rather than two.
+    */
+    const int16_t base = BAND_Y + BAND_H - 6;   // shared baseline
+    const int16_t unitGap = 5;
+
+    char num[12];
+    char unit[8];
+
+    if (s.eta_min) {
+      snprintf(num, sizeof(num), "%u", (unsigned)s.eta_min);
+      snprintf(unit, sizeof(unit), "min");
+      tft.setTextColor(C_FG, groundBg);
+      tft.setTextDatum(BL_DATUM);
+      tft.drawString(num, 8, base, 6);
+      tft.setTextColor(C_MUTED, groundBg);
+      tft.drawString(unit, 8 + tft.textWidth(num, 6) + unitGap, base, 4);
+    }
+
     // NAV_DATA.md measured progressMax drifting 7486 -> 7780 -> 7659 within
     // 45 s, so a cached remaining distance is wrong within a minute.
-    if (s.eta_min) {
-      snprintf(buf, sizeof(buf), "%u min", (unsigned)s.eta_min);
-      tft.setTextDatum(BL_DATUM);
-      tft.drawString(buf, 8, 228, 2);
-    }
     if (s.remaining_100m) {
-      snprintf(buf, sizeof(buf), "%u.%u km left",
+      snprintf(num, sizeof(num), "%u.%u",
                (unsigned)(s.remaining_100m / 10), (unsigned)(s.remaining_100m % 10));
-      tft.setTextDatum(BR_DATUM);
-      tft.drawString(buf, 312, 228, 2);
+      snprintf(unit, sizeof(unit), "km");
+
+      const int16_t numW  = tft.textWidth(num, 6);
+      const int16_t unitW = tft.textWidth(unit, 4);
+      const int16_t x0    = 312 - unitW - unitGap - numW;
+
+      tft.setTextColor(C_FG, groundBg);
+      tft.setTextDatum(BL_DATUM);
+      tft.drawString(num, x0, base, 6);
+      tft.setTextColor(C_MUTED, groundBg);
+      tft.drawString(unit, x0 + numW + unitGap, base, 4);
     }
     return;
   }
