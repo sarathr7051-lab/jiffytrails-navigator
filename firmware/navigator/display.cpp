@@ -113,11 +113,15 @@ static bool     lastGpsWeak  = false;
 static char     lastInstruction[INSTRUCTION_MAX] = {0};
 static int32_t  lastDist     = -1;
 static uint32_t lastFooter   = 0xFFFFFFFFu;
+static uint16_t lastClockKey = 0xFFFF;   // idle screen has no other change key
+static uint8_t  lastBattery  = 0xFF;
 
 void displayInvalidate() {
-  chromeValid = false;
-  lastDist    = -1;
-  lastFooter  = 0xFFFFFFFFu;
+  chromeValid  = false;
+  lastDist     = -1;
+  lastFooter   = 0xFFFFFFFFu;
+  lastClockKey = 0xFFFF;
+  lastBattery  = 0xFF;
 }
 
 // --------------------------------------------------------------- helpers
@@ -458,6 +462,16 @@ void displayRender(const NavState& s) {
            || (strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
   }
 
+  // The idle screen has no distance field, so nothing else would ever repaint
+  // it — the clock drew once at boot and then sat there, which is worse than no
+  // clock because a wrong time still looks like a right one. This is the whole
+  // reason chrome-only screens need their own change key.
+  if (scr == UI_IDLE && !changed) {
+    const uint16_t clockKey =
+        (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
+    changed = (clockKey != lastClockKey) || (s.phoneBatteryPct != lastBattery);
+  }
+
   if (changed) {
     drawChrome(s, scr);
     lastScreen   = scr;
@@ -466,6 +480,8 @@ void displayRender(const NavState& s) {
     snprintf(lastInstruction, sizeof(lastInstruction), "%s", s.instruction);
     chromeValid  = true;
     lastDist     = -1;               // chrome repaint wiped the number
+    lastClockKey = (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
+    lastBattery  = s.phoneBatteryPct;
     lastFooter   = 0xFFFFFFFFu;
   }
 
