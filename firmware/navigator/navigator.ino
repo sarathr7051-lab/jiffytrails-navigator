@@ -23,6 +23,7 @@
 #include "ble.h"
 #include "display.h"
 #include "watchdog.h"
+#include "demo.h"
 
 static const char* DEVICE_NAME = "JiffyTrails";
 
@@ -84,7 +85,12 @@ void setup() {
 
 void loop() {
   bleTick();              // re-advertises after a disconnect
-  watchdogTick(state);    // link state and freshness
+
+  // A demo owns NavState while it runs. The watchdog must not also run: it
+  // would see no packets arriving and paint STALE over the demo.
+  demoSerial();
+  if (demoActive()) demoTick(state);
+  else              watchdogTick(state);   // link state and freshness
   displaySetNight(state.night);
   displayTick();          // re-inits the panel if it has lost its config
   nudgeIfQuiet();

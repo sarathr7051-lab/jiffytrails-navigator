@@ -118,3 +118,31 @@ arrive from an unvalidated source, and a CONTINUE arrow would be a confident
 claim that the road runs straight through. Roundabout exits `0x20`–`0x2F` draw
 the ring plus the exit **number**, because exit angles are not evenly spaced and
 a generic exit stub would point the wrong way.
+
+## Where ui_mock went
+
+`firmware/ui_mock/` was the prototype the display was designed in: a scripted
+ride with no BLE, used to judge glanceability at mount distance before any
+protocol code existed. Its geometry was validated on the panel and lives on in
+`display.cpp` and `glyph_data.h` — the provenance comments in those files refer
+to it, and git history has the sketch.
+
+It was **deleted on 27 Aug 2026** because it had become a second implementation
+of every screen and had drifted badly: its own `drawManeuver` with nine
+maneuvers, its own enum where left was `MV_LEFT`, its own chrome and idle
+screen, and a traffic bar the real firmware had already removed. A mock showing
+a UI the device no longer has is worse than no mock, because it is a mock you
+might believe.
+
+Its job is now done by two things that cannot drift:
+
+- **`demo.cpp`** — feeds synthetic `NavState` to the *real* renderer. Press a
+  key on the serial console: `g` parades every maneuver, `r` plays a scripted
+  ride, `a` cycles the alerts riding and parked, `b` replays boot, `x` hands the
+  display back to the phone.
+- **`tools/ascii_glyphs.pl` and `tools/ascii_boot.pl`** — render the firmware's
+  own tables and constants to text, with no hardware at all.
+
+The split is deliberate. The Perl tools prove an arrow is geometrically what it
+claims to be; only the panel can tell you whether a fork reads as a fork at
+700 mm through a visor.
