@@ -13,8 +13,8 @@ stage N's test passes. Two gates in this plan can change the whole architecture
 | | |
 |---|---|
 | Spent | ₹1,468 (Robocraze order 356739) + soldering kit and multimeter |
-| Done | Stages 1, 2, 3, and Stage 4 Test A |
-| **Next** | **Stage 4 Test B — the sunlight gate.** Nothing else should be built first |
+| Done | Stages 1–3, Stage 4 Test A, Stage 5, and Stage 6 built |
+| **Next** | **Ride it.** The chain works on the bench; every remaining unknown needs a road |
 
 ---
 
@@ -282,6 +282,41 @@ Round-trip works, reconnect is automatic. → Stage 6
 
 ### Gate
 20-minute route, correct data throughout, no manual intervention. → Stage 7
+
+### Status — BUILT 27 Aug 2026, gate not yet run
+
+`android/navlink` is a complete Gradle project, installed and working end to
+end: Maps → NotificationListenerService → BLE → panel. Verified on a live route
+with the road name, arrival time and distance remaining all correct on screen.
+
+The bench proved: MTU 185 negotiated, 80+ packets with zero failures, the clock
+arriving, the maneuver arrow correct, night mode inverting, and the far /
+approach / committed bands switching.
+
+**Four bugs were found by looking at hardware. Review caught none of them.**
+
+- A parse failure rendering as `0 m` — and rule 2 fires during *ordinary*
+  navigation, so it flickered mid-route.
+- A zero distance treated as an imminent turn, hiding the one screen with
+  something to say.
+- A blank band painting white on the inverted screen.
+- The main row misaligned by 30 px.
+
+Three of those were layout arithmetic. That is now held by `static_assert`
+rather than by attention.
+
+**Still open, and only a road will settle them:**
+
+1. **The gate itself** — 20 minutes, no intervention.
+2. **An incoming call produced nothing on the display.** The listener matches on
+   `CATEGORY_CALL`; Samsung's dialer may not set it. Needs a call while
+   connected, then a `dumpsys notification` capture to see what it really sends.
+3. **Screen off for 15 minutes** — untested. The vendor autostart list is the
+   likeliest failure, and it has no API to check.
+4. **Reconnect** — walk 30 m away and back, no button press at either end.
+5. **The Now Bar fields alternate** roughly every second between two layouts, so
+   the road name may flicker between sources. Watch while moving; the fix is to
+   latch the last non-null value.
 
 ---
 
