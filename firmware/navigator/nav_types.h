@@ -216,8 +216,13 @@ inline BandContent bandFor(const NavState& s, UiScreen scr, uint32_t nowMs) {
   if (scr == UI_NAV_COMMITTED || scr == UI_NAV_NOW) return BAND_BLANK;
   if (scr == UI_DISCONNECTED || scr == UI_STALE)    return BAND_BLANK;
 
-  // A ringing phone is persistent; you may want to pull over for it.
-  if (s.callState == CALL_RINGING) return BAND_CALL;
+  // Any call, ringing or answered. Originally this tested RINGING alone, and
+  // nothing ever displayed: Samsung's dialer runs as a foreground service, so
+  // its *ringing* notification already carries FLAG_ONGOING_EVENT and the phone
+  // side classified every call as answered. Distinguishing the two is not worth
+  // a rule that can silence the feature entirely - a call is worth showing
+  // either way, and the band is suppressed near a turn regardless.
+  if (s.callState != CALL_IDLE) return BAND_CALL;
 
   if (s.notifyText[0] != '\0' && (nowMs - s.notifyAtMs) < NOTIFY_DWELL_MS) {
     return BAND_NOTIFY;

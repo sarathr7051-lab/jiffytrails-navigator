@@ -114,10 +114,22 @@ class NavListenerService : NotificationListenerService() {
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
 
         if (n.category == Notification.CATEGORY_CALL) {
-            // Ongoing means answered; a ringing call is still dismissible.
-            val state = if (n.flags and Notification.FLAG_ONGOING_EVENT != 0) 2 else 1
+            /*
+              Measured on the S24+: Samsung's incallui posts a CallStyle
+              notification with title = the caller's name, text = "Incoming
+              call", and FLAG_ONGOING_EVENT set *while it is still ringing* —
+              because the dialer runs as a foreground service.
+
+              An earlier version read that flag as "answered" and reported every
+              call as active, which the device then declined to display. The
+              flag says nothing about call state on this phone, so ringing is
+              inferred from the text and the device shows either case anyway.
+            */
+            val ringing = text.contains("incoming", ignoreCase = true) ||
+                          text.contains("calling", ignoreCase = true)
+            val state = if (ringing) 1 else 2
             LinkService.sendPacket(
-                PacketBuilder.call(state, title.ifBlank { "Incoming" }), "CALL")
+                PacketBuilder.call(state, title.ifBlank { text.ifBlank { "Call" } }), "CALL")
             return
         }
 
