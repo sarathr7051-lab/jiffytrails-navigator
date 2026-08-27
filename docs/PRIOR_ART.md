@@ -235,3 +235,115 @@ either uses JSON, which is heavier on BLE, or an undocumented byte layout.
 [cpb]: https://github.com/appleshaman/CarPlayBLE
 [chr]: https://github.com/fbiego/chronos-esp32
 [volos]: https://www.youtube.com/watch?v=EKnZ7ZisUj4
+
+---
+
+## NAVRIDER (navrider.in) — the closest peer, and a different architecture
+
+Surveyed 27 Aug 2026. An Indian two-wheeler navigation device, Bangalore
+jurisdiction, "prototype in active testing", launch stated as end of 2026.
+Instagram first posts **3–4 Aug 2026**, ~266 followers.
+
+**Scale, honestly:** no founder names, no LinkedIn page, no funding, no press,
+no MCA or Startup India record, and the ToS never names a legal entity. This is
+a one- or two-person prototype with a good marketing site — a peer project, not
+a funded competitor. Their build log runs **~4 months from first pixel to
+rideable prototype**.
+
+### ★ They do not scrape Google Maps — and that is the whole difference
+
+Their `/permissions/` page is effectively a negative confession: Location,
+Bluetooth, battery-optimisation exemption, and Notifications marked *optional*
+for "ride/pairing/firmware-update alerts", with the explicit note that
+*"nothing about navigation itself depends on this one."* **No
+NotificationListenerService. No AccessibilityService.**
+
+They don't need one, because they own the navigation session end to end. Their
+privacy policy names the whole stack:
+
+| Component | Role |
+|---|---|
+| **Self-hosted Valhalla** on Oracle Cloud, Mumbai | the actual routing |
+| Google Maps Platform | place search, geocoding, directions |
+| Mapbox | map display and routing |
+| Cloudflare | serves their map-tile service |
+| Open-Meteo | weather along route |
+| Firebase | auth, database, push, analytics |
+
+### The architectural fork this exposes
+
+| | This project | NAVRIDER |
+|---|---|---|
+| Source | scrape the Maps notification | own the route, self-hosted Valhalla |
+| Cost | free | an always-free ARM VM |
+| Traffic | **Google's, which is excellent** | OSM-based, no live traffic |
+| Route geometry | **none — cannot draw a line** | full polyline |
+| Lookahead | none, Maps gives one turn | whole route |
+| Speed limits | none | from the routing response |
+| Destination entry | Maps does it | must be built |
+| Fragility | breaks ~annually | stable API |
+
+**Valhalla returns an encoded polyline (6-digit precision) plus maneuvers plus
+speed limits.** That is exactly the data notification-scraping can never
+provide, and it is the same engine the lane-guidance research independently
+recommended — see FEATURES.md, where `turn_lanes` gives per-lane `valid` and
+`active` bitmasks. Someone is now running that stack in production for this
+exact product category, in Mumbai, on the free tier.
+
+### Confirmed: route polyline, no basemap
+
+Instagram bio, verbatim: *"India's first compact motorcycle navigation device
+with **Route Polyline display**."* Note the walk-back — their launch post said
+"full map display" and the next day's reel said "route poly line". Marketing
+still overclaims ("World's first real-time maps"), but the product renders route
+geometry as vectors.
+
+**Independent validation of the vector decision in this project's FEATURES.md.**
+Not a compromise forced by weak hardware — the right design for a glanceable
+bike display.
+
+### Hardware
+
+**1.75" round AMOLED**, CNC unibody, USB-C, BLE 5.0, internal battery, universal
+bar clamp. No published IP rating, only "water resistant".
+
+*Inference, not stated:* that panel points hard at the **Waveshare
+ESP32-S3-Touch-AMOLED-1.75** — 466×466 QSPI, ESP32-S3R8 with **8 MB PSRAM**.
+Which is the same board the map-feasibility research named as the upgrade path.
+Their bring-up captions ("driving every segment", "after a driver change") fit a
+QSPI panel story.
+
+Phone-tethered, **no onboard GNSS** — device-side data they store is only MAC,
+firmware version and last-seen.
+
+Their hero image alt text reads *"mounted on **Triumph** handlebar"*.
+
+### Worth stealing
+
+- **Self-hosted Valhalla on an Oracle always-free ARM VM.** The headline.
+- **Send geometry over BLE, not pixels.** Decimated polyline plus maneuver
+  metadata; the device redraws locally at GPS rate. Survives a stuttering link.
+- **OTA firmware over BLE from the companion app** — they had it working by
+  17 April. Removes the COM-port flashing loop entirely, which matters here
+  given the rule about never opening the port from a script.
+- **Dark theme with a saturated blue route line** won their readability
+  shootout against light, green and red. *Caveat: they are on AMOLED and this
+  project is on a TFT, so the result may not transfer to the sunlight gate.*
+- **Open-Meteo** — free, no key, no attribution burden.
+- **The battery-optimisation whitelist problem is real.** They name ColorOS,
+  HyperOS/MIUI and FuntouchOS, and admit the vendor toggles have no public API
+  so the app cannot verify completion. If our Android app dies mid-ride, that is
+  why.
+
+### Not open source
+
+No GitHub org, no SDK, no attribution page, and **the app is not on either
+store yet** — so the Play Store OSS-licences screen, which would enumerate their
+whole Android dependency tree, does not exist. Worth re-checking once they ship;
+it is the single most informative artifact they will ever publish.
+
+### "CNS"
+
+No such term appears anywhere in connection with them. Most likely a mishearing
+of **CNC** — "CNC UNIBODY" is a headline feature on their site. Recorded so it
+is not chased again.
