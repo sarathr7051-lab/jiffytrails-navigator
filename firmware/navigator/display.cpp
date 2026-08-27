@@ -352,7 +352,9 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
   */
   const int16_t alertTop =
       (band == BAND_CALL || band == BAND_NOTIFY)
-          ? ((scr == UI_NAV_APPROACH) ? 180 : 156)
+          ? ((scr == UI_NAV_APPROACH) ? 180
+             : (scr == UI_IDLE || scr == UI_ARRIVED) ? 64
+             : 156)
           : BAND_Y;
   const int16_t alertH = H - alertTop;
 
@@ -431,7 +433,10 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
   // when the band is tall enough, which is the difference between a message
   // being readable and merely being present.
   const char* shown = body[0] ? body : (isCall ? "incoming" : "notification");
-  const uint8_t lines = (alertH >= 70) ? 2 : 1;
+  // With no route there is nothing to protect, so a message gets the screen
+  // rather than a strip - which is the difference between glimpsing that a
+  // message arrived and actually reading it.
+  const uint8_t lines = (alertH >= 150) ? 5 : (alertH >= 70) ? 2 : 1;
 
   // drawWrapped clears against C_BG, and inside the band the ground is
   // inverted. Swapped rather than parameterised because every other caller
@@ -635,6 +640,8 @@ void displayRender(const NavState& s) {
     case BAND_FOOTER: bandKey = ((uint32_t)s.eta_min << 16) | s.remaining_100m; break;
     case BAND_CALL:   bandKey = 0x0C000000u | s.callState; break;
     case BAND_NOTIFY: bandKey = s.notifyAtMs | 0x40000000u; break;
+    // scr is folded in below, so an alert that outlives a screen change is
+    // redrawn against the new ground rather than left on the old one.
     default:          bandKey = 0; break;
   }
   bandKey ^= (uint32_t)band << 28;

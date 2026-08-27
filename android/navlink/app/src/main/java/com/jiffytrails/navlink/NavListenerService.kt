@@ -4,6 +4,7 @@ import android.app.Notification
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
@@ -35,9 +36,15 @@ class NavListenerService : NotificationListenerService() {
 
         /** Cheap enough to run often; the parser's own deadline decides. */
         private const val POLL_MS = 1000L
+
+        /** Long enough to swallow a re-post, short enough not to eat a reply. */
+        private const val ALERT_DEDUP_MS = 4000L
     }
 
     private val parser by lazy { MapsParser(this) }
+
+    private var lastAlertKey: String? = null
+    private var lastAlertAt = 0L
     private val handler = Handler(Looper.getMainLooper())
 
     private val poller = object : Runnable {
@@ -147,15 +154,49 @@ class NavListenerService : NotificationListenerService() {
         if (sbn.isOngoing) return          // media, downloads, persistent status
         if (title.isBlank() && text.isBlank()) return
 
+        /*
+          Drop the group summary. WhatsApp posts the real message and then a
+          rollup — logged as "WhatsApp" / "3 messages from 2 chats" — a few
+          milliseconds later. On a six-second band the rollup simply overwrites
+          whatever was worth reading, so the rider sees a count instead of the
+          message. The count is never the useful one.
+        */
+        if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return
+
         val kind = when (n.category) {
             Notification.CATEGORY_MESSAGE -> 1
             Notification.CATEGORY_EMAIL -> 2
             Notification.CATEGORY_ALARM, Notification.CATEGORY_ERROR -> 3
             else -> 0
         }
+        val flat = flatten(text)
+        if (flat.isBlank()) return
+
+        // Samsung and WhatsApp both re-post the same notification within a few
+        // milliseconds. Without this the band restarts its six-second dwell on a
+        // duplicate and a genuine second message is masked by the first.
+        val key = "$kind|$title|$flat"
+        val now = SystemClock.elapsedRealtime()
+        if (key == lastAlertKey && now - lastAlertAt < ALERT_DEDUP_MS) return
+        lastAlertKey = key
+        lastAlertAt = now
+
         // Logged because the failure mode here is silence: an alert that never
         // reaches the device looks identical to one the device chose not to show.
-        Log.i(TAG, "notify kind=$kind ${sbn.packageName}: \"$title\" / \"$text\"")
-        LinkService.sendPacket(PacketBuilder.notify(kind, title, text), "NOTIFY")
+        Log.i(TAG, "notify kind=$kind ${sbn.packageName}: \"$title\" / \"$flat\"")
+        LinkService.sendPacket(PacketBuilder.notify(kind, title, flat), "NOTIFY")
+    }
+
+    /**
+     * Collapse a message to one readable line.
+     *
+     * Real traffic is not one tidy sentence — a logged WhatsApp message arrived
+     * as five lines with blank lines between them, and sent raw those newlines
+     * reach the panel as gaps and the useful words fall off the end. Runs of
+     * whitespace become single spaces so the truncation budget is spent on
+     * words.
+     */
+    private fun flatten(s: String): String =
+        s.replace(Regex("""\s+"""), " ").trim()
     }
 }
