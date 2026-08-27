@@ -1,3 +1,14 @@
+// ---------------------------------------------------------------------------
+// GENERATED COPY - DO NOT EDIT.
+//
+// Source of truth: firmware/navigator/demo.cpp
+// Regenerate:      perl tools/sync_ui_mock.pl
+//
+// arduino-cli and the Arduino IDE both copy a sketch before compiling it, so
+// this sketch cannot #include across to firmware/navigator/. This file is a
+// verbatim copy. Edit the original; `perl tools/sync_ui_mock.pl --check` fails
+// if the two have diverged.
+// ---------------------------------------------------------------------------
 /*
   demo.cpp - scripted state for reviewing the interface without a phone.
 

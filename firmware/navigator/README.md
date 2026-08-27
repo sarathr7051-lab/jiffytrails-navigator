@@ -119,30 +119,46 @@ claim that the road runs straight through. Roundabout exits `0x20`–`0x2F` draw
 the ring plus the exit **number**, because exit angles are not evenly spaced and
 a generic exit stub would point the wrong way.
 
-## Where ui_mock went
 
-`firmware/ui_mock/` was the prototype the display was designed in: a scripted
-ride with no BLE, used to judge glanceability at mount distance before any
-protocol code existed. Its geometry was validated on the panel and lives on in
-`display.cpp` and `glyph_data.h` — the provenance comments in those files refer
-to it, and git history has the sketch.
+## Two sketches
 
-It was **deleted on 27 Aug 2026** because it had become a second implementation
-of every screen and had drifted badly: its own `drawManeuver` with nine
-maneuvers, its own enum where left was `MV_LEFT`, its own chrome and idle
-screen, and a traffic bar the real firmware had already removed. A mock showing
-a UI the device no longer has is worse than no mock, because it is a mock you
-might believe.
+**`firmware/navigator/`** is the real thing: the phone drives it over BLE.
 
-Its job is now done by two things that cannot drift:
+**`firmware/ui_mock/`** is the same display with no phone and no radio. It boots
+straight into a scripted ride from Panampilly Nagar to Fort Kochi Beach and
+loops it — distances count down at a real speed, the screen crosses every band,
+every maneuver glyph appears, and the route ends on the arrival screen before
+starting again. Useful for judging the interface at mount distance without
+pairing anything, and it is half the flash because there is no BLE stack.
 
-- **`demo.cpp`** — feeds synthetic `NavState` to the *real* renderer. Press a
-  key on the serial console: `g` parades every maneuver, `r` plays a scripted
-  ride, `a` cycles the alerts riding and parked, `b` replays boot, `x` hands the
-  display back to the phone.
-- **`tools/ascii_glyphs.pl` and `tools/ascii_boot.pl`** — render the firmware's
-  own tables and constants to text, with no hardware at all.
+Both accept the same serial keys at 115200:
 
-The split is deliberate. The Perl tools prove an arrow is geometrically what it
-claims to be; only the panel can tell you whether a fork reads as a fork at
-700 mm through a visor.
+| key | |
+|---|---|
+| `r` | the scripted ride |
+| `g` | glyph parade — every maneuver, named as it draws |
+| `a` | alerts — call and message, riding and parked |
+| `b` | replay the boot sequence |
+| `x` | stop (in `navigator`, hands the display back to the phone) |
+
+### Keeping them in sync
+
+`firmware/ui_mock/src/` holds **generated copies** of the shared sources. Do not
+edit them. After changing anything in `firmware/navigator/`:
+
+```
+perl tools/sync_ui_mock.pl
+```
+
+and `perl tools/sync_ui_mock.pl --check` fails if they have diverged.
+
+Copies rather than includes because arduino-cli *and* the IDE both copy a sketch
+into a build directory before compiling, so a relative `#include` pointing
+outside the sketch resolves against the copy and finds nothing.
+
+This matters more than it looks. The previous `ui_mock` was a hand-maintained
+second implementation of every screen, and it drifted until it had nine
+maneuvers, an enum where left was `MV_LEFT`, and a traffic bar the firmware had
+removed — a mock showing a UI the device no longer had. The copies are
+mechanical and the check makes drift an error instead of something you discover
+on the panel.

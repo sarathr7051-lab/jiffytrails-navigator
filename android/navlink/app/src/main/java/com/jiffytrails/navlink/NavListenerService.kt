@@ -130,7 +130,23 @@ class NavListenerService : NotificationListenerService() {
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
 
-        if (n.category == Notification.CATEGORY_CALL) {
+        /*
+          A CALL notification that is not ongoing is not a call.
+
+          Samsung posts "Missed call - Amma" with category=CALL, and the first
+          version treated it exactly like a live one: BAND_CALL has no dwell, so
+          a missed call parked the caller's name on the handlebar until the
+          notification was dismissed by hand. Seen on the panel with the band
+          still up long after the call had ended.
+
+          isOngoing is the right discriminator and is locale-independent, which
+          the text test below is not: the dialer runs as a foreground service
+          while ringing AND while connected, so a live call is ongoing in both
+          states, and a missed call - an ordinary dismissible notification - is
+          not. A non-ongoing CALL falls through to the transient path below,
+          where it gets six seconds and clears itself.
+        */
+        if (n.category == Notification.CATEGORY_CALL && sbn.isOngoing) {
             /*
               Measured on the S24+: Samsung's incallui posts a CallStyle
               notification with title = the caller's name, text = "Incoming
