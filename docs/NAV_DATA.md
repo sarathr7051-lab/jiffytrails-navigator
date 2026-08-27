@@ -425,3 +425,51 @@ reading `progressMax` for route-replacement detection; stop drawing the bar.
 
 **Not accepted:** the same reviewer ranked GPS speed as the top addition.
 Rejected — the Speed 400 has a speedometer six inches away. See FEATURES.md.
+
+---
+
+## Probe results — measured on the S24+, 27 Aug 2026
+
+The "unmined fields" section above was speculation. These are the real values,
+logged from a live route on Moulana Azad Rd.
+
+```
+PROBE shortCriticalText=<null>  showChronometer=false countDown=false
+      when=0min from now
+      nowbarPrimary=0 m
+      nowbarSecondary=towards Moulana Azad Rd
+      flags=0x4016a
+```
+
+### Two hopes killed
+
+**`android.shortCriticalText` is null.** It was ranked the highest-value
+unmined field — Google's own pre-shortened string, AOSP rather than Samsung, one
+`getString`. Maps does not populate it. It would also have been the fix for the
+portability warning at the top of this document, so **that warning stands**.
+
+**No chronometer ETA.** `showChronometer` and `chronometerCountDown` are both
+false and `when` is unset, so there is no epoch-millis arrival time. ETA must
+keep coming from the `"Arrive ..."` regex on `subText`, with all the locale
+fragility that implies.
+
+### One real find
+
+**`nowbarSecondaryInfo` carries a pre-shortened road name**, phrased as
+`"towards Moulana Azad Rd"`. `nowbarPrimaryInfo` carries the distance in the
+same compact form.
+
+That is directly useful. Parser rule 7 exists because instructions reach 60
+characters against roughly 16–20 of legible room; this field is already short
+because Samsung sized it for the Now Bar. **Prefer it over truncating
+`android.title`.**
+
+Caveat: it is a Samsung One UI key, so using it deepens rather than reduces the
+One UI dependency. Worth it — a truncated road name is barely better than none.
+
+### Confirmed present
+
+`flags=0x4016a` includes **`FLAG_PROMOTED_ONGOING`**, verified independently in
+a `dumpsys notification` capture alongside `category=navigation`. So the
+Android 16 Live Updates path is definitely what this phone is on, and that flag
+is a cleaner "this is a live nav update" test than sniffing content.
