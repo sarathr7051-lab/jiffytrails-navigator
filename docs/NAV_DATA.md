@@ -556,3 +556,168 @@ adb shell cmd notification allow_listener    com.jiffytrails.navlink/com.jiffytr
 
 This wasted a debugging round: the symptom is a display frozen on old data with
 a healthy-looking link, which is indistinguishable from a firmware fault.
+
+---
+
+## Can Maps be made to publish more? (27 Aug 2026)
+
+A four-thread sweep of every plausible route: Maps settings, disabling Live
+Updates, One UI features, Android listener APIs, other Maps surfaces,
+AccessibilityService, audio capture, Shizuku, root, and alternative nav apps.
+
+**The current dump is the ceiling for the notification channel**, and it is a
+*higher* ceiling than the pre-ProgressStyle notification ever was.
+
+### The downgrade hypothesis was wrong - do not disable Live Updates
+
+Gadgetbridge's docs tell users to turn Live Updates off, which reads like
+evidence that the older notification carried more. It does not. Checked against
+two independent parsers - Gadgetbridge's `GoogleMapsNotificationHandler` and
+`3v1n0/GMapsParser` - the old format's *complete* field set was:
+
+    distance-to-turn, one instruction string, remaining duration,
+    remaining distance (rounded), ETA, one maneuver bitmap, rerouting flag
+
+No second maneuver. No lanes. No maneuver enum. No road-name field.
+
+Gadgetbridge's advice is not "the new format is poorer"; it is "our parser has
+not been updated for it". Their maintainers could not reproduce it off a Pixel
+and closed the issue with a docs change. We have already done what they haven't.
+
+Downgrading would *lose* us `progressSegments` and metre-resolution remaining
+distance, and reintroduce version-fragile `RemoteViews` scraping. Also
+structurally: a promoted Live Update **may not carry a custom content view at
+all**, so there is provably nothing for RemoteViews reflection to find here.
+
+### Old vs new
+
+| Datum | Old | New (ours) |
+|---|---|---|
+| Remaining distance | `subText`, rounded "5.2 km" | `progressMax - progress`, **metres** |
+| Traffic ahead | - | **`progressSegments`** |
+| Remaining duration | `subText` "12 min" | derived from ETA - now |
+| Everything else | equivalent | equivalent |
+
+### The one datum still on the table: `progressSegments`
+
+Google's guidance is that segments "colorize a state and duration of traffic",
+and that segment colours change as traffic does. Our capture had **one blue
+segment** (`0xFF00B0FF`, Material Light Blue A400 - Maps' no-traffic colour)
+because the route was clear.
+
+**On a congested route this should return an ordered list of `{length,
+colorInt}` - a distance-indexed traffic profile of the road ahead.** That is
+real structured data we are currently discarding. Re-dump during rush hour.
+
+Unverified but strongly implied: `getProgressMax()` is documented as "the sum of
+the lengths of all Segments", so 12729 is summed segment length, i.e. metres of
+route. Consistent with what we already compute.
+
+### Confirmed dead, with reasons
+
+- **Every Maps setting.** The full Navigation settings set touches voice,
+  buildings, media controls, incident alerts and the speedometer. None affect
+  notification payload. The speed limit is never published anywhere reachable -
+  not even in the Android Auto schema. Source it from OSM `maxspeed` if wanted.
+- **Every One UI feature.** Now Bar, AOD, Edge panels, DeX, Bixby Routines, Now
+  Brief are all render-side; redaction never affects a bound listener.
+  Structurally decisive: **the Now Bar renders from the same notification we
+  read.** If Samsung could show "Then, right", it would be in our bundle.
+- **Every listener API.** `Ranking`, `getSnoozedNotifications`,
+  `requestListenerHints`, `setNotificationsShown`, shortcut/LocusId lookups, and
+  the Android 16 promoted-notification APIs. Notification content is 100%
+  author-controlled; the platform never enriches it and no consumer can ask the
+  poster for more. There is no "give me the rich version" call.
+- **Wear OS.** The Data Layer enforces matching package name *and signature*; a
+  local app cannot observe Maps' traffic. It is not richer anyway - Google's own
+  docs say lane guidance may not appear on the watch.
+- **Voice-guidance capture + STT.** The spoken phrase does contain the "then",
+  but `AudioPlaybackCapture` can only capture `USAGE_MEDIA`, `USAGE_GAME` and
+  `USAGE_UNKNOWN`. Navigation uses `USAGE_ASSISTANCE_NAVIGATION_GUIDANCE`, which
+  is not capturable. Closed.
+- **Widgets, PiP, Maps Go, share-trip, broadcasts, content providers.** No
+  outbound API. Gadgetbridge's maintainers state it flatly: the Maps app
+  provides no API on Android.
+- **Assistant Driving Mode.** Removed April 2025. Nothing to hook.
+
+### AccessibilityService - fails on the use case, not the technology
+
+It would work: `canRetrieveWindowContent` reads other apps' node trees, and
+`FLAG_SECURE` does not block it. Whether Maps exposes the "Then" card, lane
+strip and speed badge as individual nodes is **unknown** - and notably, *no one
+has ever published a dump of the Maps navigation node tree, and not one
+open-source project scrapes Maps navigation this way.* Everyone uses the
+notification or OCR. That absence is itself a finding.
+
+**The disqualifier:** a service can only read the *currently active window*.
+Screen off or Maps backgrounded means no tree and no event stream. Maps has no
+PiP nav mode to fall back on. This is exactly why every prior project uses the
+notification - it survives screen-off because a foreground service posts it.
+
+Additional live threats: Android 13+ Restricted Settings (and reports that One
+UI 8.5 offers no "Allow restricted settings" item at all); Android 14+
+`accessibilityDataSensitive`, a one-line change Maps could ship that would
+silently kill this; Android 17 blocking it outright under Advanced Protection.
+
+Worth a 30-minute experiment to convert the unknowns into facts. Not worth
+building on, and never as the sole source.
+
+### Where the data actually lives: Android Auto
+
+The AA protobuf schema is the only place Google publishes what we want:
+
+    NavigationStep  { maneuver; road; repeated NavigationLane lanes; cue }
+    NavigationState { repeated NavigationStep steps; ... }
+
+`steps` is **repeated** - that is the next maneuver. `lanes[].lane_directions`
+is lane guidance. `road.name` is the road name. And the phone can talk AA to
+itself: AA ships a head unit server, and self-mode head units exist.
+
+The cost is the problem. `aasdk` ships **no** navigation-status handler; the
+request for one is open and unanswered. The work is forking a head unit,
+advertising `NavigationStatusService`, implementing the cluster messages, and
+bridging to BLE - while running the whole projection stack including an H.264
+video sink we do not want, on a phone, on a motorcycle, in the sun. Plus TLS
+certificates extracted from the AA APK, which Google rotates.
+
+**Weeks of work, terms-violating, breaks on every AA update. Not proceeding.**
+
+### If we ever abandon Maps: fork OsmAnd
+
+Best effort-to-reward trade by a wide margin. Its AIDL `ADirectionInfo` today
+carries only `distanceTo`, `turnType`, `isLeftSide` - the request to widen it is
+open and unimplemented. **But OsmAnd computes everything internally**: it ships
+"Second next turn", "Lanes" and speed-limit widgets. Widening the AIDL in a fork
+is a small change to a GPLv3 codebase, and Gadgetbridge's existing OsmAnd
+integration is a working reference for the consumer side.
+
+Also viable: MapLibre Navigation Android (secondary instructions and lanes by
+construction). Sygic's Fleet SDK has the richest documented broadcast anywhere -
+`DirCommandSecondary`, `NextStreet`, `SpeedLimit`, `LaneData[n]` - but is gated
+behind a sales agreement. Not a hobbyist path.
+
+### Regional note
+
+Lane guidance launched in the US/Canada and 15+ European countries; **no
+confirmation it exists in India at all.** For our region the lane question may
+be moot regardless of channel - which is consistent with the 0.52% OSM
+`turn:lanes` coverage that closed the feature in FEATURES.md.
+
+India does have two-wheeler mode with landmark-based guidance. Worth comparing
+the notification in driving vs two-wheeler mode; landmarks may surface in
+`secondaryInfo`.
+
+### Untested, cheap, worth trying
+
+- **Settings > Navigation > Glanceable directions** (off by default). Described
+  as putting turn-by-turn on the lock screen "using regular system
+  notifications", including before you tap Start. Probably changes *when* the
+  notification is posted rather than what it contains, but it is one tap.
+- **Iterate the whole Samsung bundle** rather than probing known keys. A
+  decompiled key list (kirillshsh/nowbar-sdk) names `style`, `firstIcon`,
+  `secondaryInfoIcon`, per-segment colour keys and more that we never dumped.
+  None carries a maneuver, second step or lanes - it is more of the same kind of
+  data - but enumeration is free.
+- **Re-dump after any major Maps or OS update.** Android 17 adds
+  `Notification.MetricStyle` (up to three label/value/unit metrics). If Maps
+  adopts it, that is three more structured numeric fields.
