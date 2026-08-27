@@ -175,6 +175,22 @@ class BleLink(
          */
         private const val NAV_HEARTBEAT_MS = 5_000L
 
+        /**
+         * How long the heartbeat may keep restating an update after the phone
+         * side last produced one.
+         *
+         * Without this the resend runs forever, so a parser that has stopped -
+         * listener unbound, Maps closed, the app suspended - leaves the device
+         * receiving a packet a minute old and looking healthy. Observed on the
+         * bench as a display frozen at "40 m" that never went STALE.
+         *
+         * The heartbeat exists to survive quiet data, not a quiet phone. Maps
+         * posts at ~1 Hz throughout navigation, so a live parser refreshes this
+         * even when nothing in the payload changes; once it lapses, silence is
+         * the honest signal and the device's 10 s watchdog should see it.
+         */
+        private const val NAV_MAX_AGE_MS = 20_000L
+
         /** Drives the heartbeat above; also the only periodic work on this thread. */
         private const val TICK_MS = 1_000L
 
@@ -243,6 +259,9 @@ class BleLink(
     /** Last NAV actually written, for de-duplication. */
     private var sentNav: ByteArray? = null
 
+    /** When the phone side last handed us an update; bounds the heartbeat. */
+    private var lastNavSubmitAt = 0L
+
     private var lastNavWriteAt = 0L
     private var lastAnyWriteAt = 0L
 
@@ -293,6 +312,7 @@ class BleLink(
     /** As [submitNav], for a caller that has already built the frame. */
     fun submitNavFrame(frame: ByteArray) = bleHandler.post {
         pendingNav = frame
+        lastNavSubmitAt = SystemClock.elapsedRealtime()
         flushNav(force = false)
     }
 
@@ -801,6 +821,10 @@ class BleLink(
         val unchanged = sentNav?.contentEquals(frame) == true
         val silentFor = if (lastAnyWriteAt == 0L) Long.MAX_VALUE else now - lastAnyWriteAt
         if (!force && unchanged && silentFor < NAV_HEARTBEAT_MS) return
+
+        // Never restate an update the phone side has stopped refreshing. Letting
+        // the device fall to STALE is the correct outcome, not a failure.
+        if (unchanged && now - lastNavSubmitAt > NAV_MAX_AGE_MS) return
 
         lastNavWriteAt = now
         sentNav = frame

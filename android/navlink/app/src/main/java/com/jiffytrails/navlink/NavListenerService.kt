@@ -138,8 +138,9 @@ class NavListenerService : NotificationListenerService() {
             val ringing = text.contains("incoming", ignoreCase = true) ||
                           text.contains("calling", ignoreCase = true)
             val state = if (ringing) 1 else 2
-            LinkService.sendPacket(
-                PacketBuilder.call(state, title.ifBlank { text.ifBlank { "Call" } }), "CALL")
+            val who = title.ifBlank { text.ifBlank { "Call" } }
+            Log.i(TAG, "call ${if (ringing) "ringing" else "active"} \"$who\" ${sbn.packageName}")
+            LinkService.sendPacket(PacketBuilder.call(state, who), "CALL")
             return
         }
 
@@ -152,6 +153,9 @@ class NavListenerService : NotificationListenerService() {
             Notification.CATEGORY_ALARM, Notification.CATEGORY_ERROR -> 3
             else -> 0
         }
+        // Logged because the failure mode here is silence: an alert that never
+        // reaches the device looks identical to one the device chose not to show.
+        Log.i(TAG, "notify kind=$kind ${sbn.packageName}: \"$title\" / \"$text\"")
         LinkService.sendPacket(PacketBuilder.notify(kind, title, text), "NOTIFY")
     }
 }
