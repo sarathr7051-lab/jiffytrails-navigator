@@ -269,6 +269,7 @@ static bool handleConfig(PacketReader& r, NavState& s) {
     const uint8_t night = r.u8();
     if (r.ok()) s.night = (night != 0);
   }
+  BLE_LOG("[ble] config: night=%d\n", (int)s.night);
   return true;
 }
 

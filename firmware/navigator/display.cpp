@@ -84,9 +84,16 @@ static const int16_t ARROW_ZONE = SPR_X - 4;
 
 // Glyph boxes, per screen. The committed/now box is the widest one and is the
 // binding constraint on ARROW_ZONE, so let the compiler hold us to it.
-static const int16_t GLYPH_FAR_X = 12, GLYPH_FAR_Y = 96,  GLYPH_FAR_S = 64;
-static const int16_t GLYPH_APP_X =  8, GLYPH_APP_Y = 92,  GLYPH_APP_S = 92;
+// Sized against the distance number, not in isolation. Font 8 is 75 px tall,
+// and a glyph fills roughly 90% of its declared box — so a 64 px box drew an
+// arrow about 57 px against a 75 px number, and the number visibly dominated.
+// The arrow is the instruction; the number is the qualifier, and it should not
+// be the larger of the two. Boxes now start at parity and grow past it as the
+// turn approaches, which also makes the progression easier to feel.
+static const int16_t GLYPH_FAR_X =  8, GLYPH_FAR_Y = 88,  GLYPH_FAR_S = 84;
+static const int16_t GLYPH_APP_X =  6, GLYPH_APP_Y = 86,  GLYPH_APP_S = 96;
 static const int16_t GLYPH_BIG_X =  4, GLYPH_BIG_Y = 76,  GLYPH_BIG_S = 104;
+static_assert(GLYPH_FAR_X + GLYPH_FAR_S <= 108, "far glyph runs under the sprite");
 static_assert(GLYPH_BIG_X + GLYPH_BIG_S <= ARROW_ZONE, "glyph runs under the sprite");
 static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the sprite");
 
@@ -524,5 +531,59 @@ void displaySetNight(bool on) {
     C_MUTED  = 0x8410;
   }
 
+  displayInvalidate();
+}
+
+// --------------------------------------------------------- panel watchdog
+
+/*
+  The panel can lose its configuration while the ESP32 carries on running.
+
+  Observed twice on the bench: the display renders correctly, then goes blank
+  white, and stays white through a reflash — but comes back after unplugging
+  and replugging power. That is the signature of the ILI9341 reverting to its
+  power-on state (display off, sleep in) while the MCU keeps writing pixels to
+  a controller that has stopped listening. A brownout on the 3.3 V rail will do
+  it; so will a glitch on the reset line.
+
+  Requiring a power cycle to recover is tolerable on a desk and not tolerable
+  on a motorcycle, where the supply is a 12 V accessory rail and the whole
+  assembly is being shaken. So the device asks.
+
+  MISO is wired to GPIO 19, so RDDPM (0x0A) can be read back. Bit 2 is DISON
+  (display on) and bit 4 is SLPOUT (awake); both are set on a healthy panel and
+  clear after an unwanted reset. Three consecutive bad reads are required before
+  acting, because a single garbled read on a marginal bus should not trigger a
+  visible re-init.
+*/
+static const uint32_t PANEL_CHECK_MS   = 2000;
+static const uint8_t  PANEL_OK_MASK    = 0x14;   // DISON | SLPOUT
+static const uint8_t  PANEL_FAIL_LIMIT = 3;
+
+static uint32_t lastPanelCheckMs = 0;
+static uint8_t  panelFailStreak  = 0;
+static uint32_t panelRecoveries  = 0;
+
+void displayTick() {
+  const uint32_t now = millis();
+  if (now - lastPanelCheckMs < PANEL_CHECK_MS) return;
+  lastPanelCheckMs = now;
+
+  const uint8_t pm = tft.readcommand8(0x0A);
+
+  if ((pm & PANEL_OK_MASK) == PANEL_OK_MASK) {
+    panelFailStreak = 0;
+    return;
+  }
+
+  if (++panelFailStreak < PANEL_FAIL_LIMIT) return;
+  panelFailStreak = 0;
+  panelRecoveries++;
+
+  Serial.printf("display: panel lost config (RDDPM 0x%02X), re-init #%lu\n",
+                pm, (unsigned long)panelRecoveries);
+
+  tft.init();
+  tft.setRotation(ROTATION);
   displayInvalidate();
 }

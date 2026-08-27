@@ -22,3 +22,8 @@ void displayInvalidate();
 // inversions (the sub-30 m screen, the alert band) flip with it, so they stay
 // inversions rather than becoming ordinary.
 void displaySetNight(bool on);
+
+// Call every loop. Periodically asks the panel whether it is still configured
+// and re-initialises it if not — see the comment on displayTick() for why this
+// device needs a display watchdog at all.
+void displayTick();
