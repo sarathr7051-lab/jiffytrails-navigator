@@ -672,3 +672,74 @@ positioning at all.
 would have killed it anyway, Google does not offer this in India, and the map
 data remains at 0.52%. The OsmAnd sanity check is the only cheap next step, and
 it is a 30-minute errand, not a project.
+
+---
+
+## Data source: keep scraping Maps, do not switch to Valhalla — 27 Aug 2026
+
+**Proposed:** replace notification scraping with self-hosted Valhalla, as
+NAVRIDER does (see PRIOR_ART.md).
+
+### Decision: no. Not now, and the reason is sequencing rather than merit.
+
+### What Valhalla would genuinely give
+
+Route geometry (the polyline needed to draw a line at all), lookahead past the
+current turn, speed limits, lane data where tagged, and a stable API that does
+not break roughly annually. All real, none of it available from the
+notification.
+
+### What it would cost
+
+**Maps currently does four jobs beyond supplying data:** destination entry,
+routing, rerouting, and off-route detection. The app only listens.
+
+Valhalla hands all four back. It needs search and geocoding, a UI to choose a
+destination, route calculation, deviation detection and re-request logic. That
+is a real navigation app, and it is weeks of work to arrive back at today's
+functionality.
+
+**And it costs Google's live traffic**, which in Bengaluru is arguably the most
+valuable single thing Maps provides. Valhalla on OSM has none.
+
+### There is no easy middle, and this was checked
+
+For lane guidance the answer was a one-shot enrichment query alongside Maps.
+That pattern does not transfer. To draw a route you need *the route*, and the
+notification gives a distance, not coordinates — so Valhalla cannot be asked for
+the same route without knowing the destination, which Maps never discloses.
+
+It is a genuine fork.
+
+### The deciding argument
+
+**The device has not completed a single real ride.** Switching architecture to
+solve a problem that has not been experienced is the wrong order. Whether the
+route line is missed is an empirical question, and Beeline built a product on
+the premise that an arrow is sufficient.
+
+### Why waiting is cheap
+
+The protocol is already source-agnostic, by design. `BLE_PROTOCOL.md` states
+that `next_maneuver` and `next_dist_m` are reserved *"so an OsmAnd or Mapbox
+source can fill them without a protocol change."*
+
+**The firmware does not care where packets originate.** Switching later costs
+the Android work and nothing else — no firmware, no protocol, no display work is
+wasted.
+
+### Revisit on any of these
+
+1. **After 5–10 real rides**, if the arrow proves insufficient at Bengaluru's
+   messier junctions and the route line is actively wanted.
+2. **When Maps breaks the format.** It does roughly annually and Gadgetbridge is
+   already stuck on it. Migration becomes forced, and a scoped Valhalla path is
+   then insurance rather than a project.
+3. **If lane guidance becomes worth building** — Valhalla is already the
+   recommended path there, so the two decisions collapse into one.
+
+### One argument against, worth keeping
+
+If the sunlight gate forces a monochrome reflective panel, a thin route line is
+among the first things glare destroys. That weakens the case for switching
+rather than strengthening it.
