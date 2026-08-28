@@ -39,6 +39,7 @@
 #include <TFT_eSPI.h>
 #include "display.h"
 #include "maneuvers.h"
+#include "geom.h"
 
 // display.cpp owns the panel. maneuvers.cpp gets it through the TFT_eSPI&
 // parameter in its signature; nothing else touches it.
@@ -157,6 +158,10 @@ static bool     lastGpsWeak  = false;
 static char     lastInstruction[INSTRUCTION_MAX] = {0};
 static int32_t  lastDist     = -1;
 static uint32_t lastFooter   = 0xFFFFFFFFu;
+// Junction geometry arriving, changing or expiring is a chrome change: it
+// occupies the arrow box, so the box has to be repainted when it appears and
+// again when it goes and the arrow comes back.
+static uint32_t lastGeomKey  = 0xFFFFFFFFu;
 // The idle and arrived screens repaint wholesale, so they track their alert
 // separately from lastFooter, which encodes a nav-screen band value.
 static uint32_t lastIdleKey = 0;
@@ -708,8 +713,25 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   }
   if (s.gpsWeak()) drawGpsWeak(true, C_MUTED, C_BG);
 
-  if (far) drawManeuver(tft, GLYPH_FAR_X, GLYPH_FAR_Y, GLYPH_FAR_S, s.maneuver, C_FG, C_BG);
-  else     drawManeuver(tft, GLYPH_APP_X, GLYPH_APP_Y, GLYPH_APP_S, s.maneuver, C_FG, C_BG);
+  const int16_t gx = far ? GLYPH_FAR_X : GLYPH_APP_X;
+  const int16_t gy = far ? GLYPH_FAR_Y : GLYPH_APP_Y;
+  const int16_t gs = far ? GLYPH_FAR_S : GLYPH_APP_S;
+
+  /*
+    Junction geometry replaces the arrow when there is any, and only here.
+
+    Below 100 m the arrow always wins. A drawing has to be read; an arrow is
+    recognised. There is time to read a junction at 300 m and none at 60, and
+    the whole point of the committed screen is that it says one thing instantly.
+
+    When no geometry has arrived - which is every ride until the phone side of
+    ARCH_ANDROID_AUTO.md 2.2 exists - this is exactly the old behaviour. The
+    freshness test matters as much as the presence test: geometry that stopped
+    arriving is a picture of a junction you have already ridden through, and a
+    stale map is worse than no map.
+  */
+  if (geomValid(millis())) geomDraw(tft, gx, gy, gs, C_FG, C_MUTED, C_BG);
+  else                     drawManeuver(tft, gx, gy, gs, s.maneuver, C_FG, C_BG);
 }
 
 // --------------------------------------------------------- panel watchdog
@@ -995,6 +1017,7 @@ void displayRender(const NavState& s) {
   if (navScreen && !changed) {
     changed = (s.maneuver != lastManeuver)
            || (s.gpsWeak() != lastGpsWeak)
+           || (geomKey(millis()) != lastGeomKey)
            || (strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
   }
 
@@ -1038,6 +1061,7 @@ void displayRender(const NavState& s) {
     lastScreen   = scr;
     lastManeuver = s.maneuver;
     lastGpsWeak  = s.gpsWeak();
+    lastGeomKey  = geomKey(millis());
     snprintf(lastInstruction, sizeof(lastInstruction), "%s", s.instruction);
     chromeValid  = true;
     lastDist     = -1;               // chrome repaint wiped the number

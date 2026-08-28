@@ -14,10 +14,11 @@
 #include "demo.h"
 #include "display.h"
 #include "glyph_data.h"
+#include "geom.h"
 
 namespace {
 
-enum Mode : uint8_t { M_OFF, M_GLYPHS, M_RIDE, M_ALERTS };   // M_ prefix: plain
+enum Mode : uint8_t { M_OFF, M_GLYPHS, M_RIDE, M_ALERTS, M_JUNC };   // M_ prefix: plain
                                                              // GLYPHS collides with
                                                              // the glyph table.
 
@@ -27,6 +28,7 @@ uint16_t step      = 0;
 
 const uint32_t GLYPH_MS = 1800;   // long enough to look, short enough to sit through
 const uint32_t ALERT_MS = 3500;
+const uint32_t JUNC_MS  = 3000;   // long enough to work out what you are seeing
 
 // Short names, drawn as the road name so the parade says what it is showing.
 // Deliberately not derived from the enum - a name is for a human, and
@@ -118,6 +120,56 @@ uint32_t routeRemaining() {
   return m;
 }
 
+/*
+  Synthetic junctions, in the frame the phone will send: x right, y forward,
+  decimetres, already rotated heading-up. These exist so the renderer can be
+  judged on the panel before any of the Android side of ARCH_ANDROID_AUTO.md
+  exists - the same reason the glyph parade exists.
+
+  All three are cases where an arrow is not enough, which is the only
+  justification for drawing a map at all.
+*/
+void juncFlyover() {
+  geomBegin();
+  // The cross road underneath. Broken automatically where the flyover passes.
+  geomWay(0, 0);       geomPt(-600, 700); geomPt(600, 700);
+  // The service road you are NOT taking: peels left, stays at grade.
+  geomWay(0, 0);       geomPt(0, 400);  geomPt(-140, 620); geomPt(-300, 980);
+  // Your path: up onto the flyover. layer 1 draws last and cuts the gap.
+  geomWay(1, GEOM_TAKEN);
+  geomPt(0, 0); geomPt(0, 400); geomPt(120, 640); geomPt(240, 1050);
+  geomCommit(millis());
+}
+
+void juncFork() {
+  geomBegin();
+  geomWay(0, 0);       geomPt(0, 420); geomPt(-200, 700); geomPt(-380, 1000);
+  geomWay(0, 0);       geomPt(0, 420); geomPt(20, 760);   geomPt(40, 1100);
+  geomWay(0, GEOM_TAKEN);
+  geomPt(0, 0); geomPt(0, 420); geomPt(180, 700); geomPt(330, 1020);
+  geomCommit(millis());
+}
+
+void juncRoundabout() {
+  geomBegin();
+  const int16_t ccy = 620, rr = 250;
+
+  // The ring, as a closed polyline. Twelve points is plenty at this size.
+  geomWay(0, 0);
+  for (uint8_t i = 0; i <= 12; i++) {
+    const float a = 2.0f * 3.14159265f * i / 12.0f;
+    geomPt((int16_t)(rr * sinf(a)), (int16_t)(ccy - rr * cosf(a)));
+  }
+  // Exits you are not taking.
+  geomWay(0, 0); geomPt(-250, 620); geomPt(-600, 560);
+  geomWay(0, 0); geomPt(0, 870);    geomPt(-60, 1150);
+  geomWay(0, 0); geomPt(250, 620);  geomPt(560, 400);
+  // Entry and the exit taken.
+  geomWay(0, GEOM_TAKEN); geomPt(0, 0);   geomPt(0, 370);
+  geomWay(0, GEOM_TAKEN); geomPt(180, 800); geomPt(430, 1020);
+  geomCommit(millis());
+}
+
 void baseline(NavState& s) {
   // A demo must look like a healthy link or screenFor() will show DISCONNECTED
   // over the top of it. This is the only place anything fakes link health.
@@ -147,6 +199,7 @@ void clearAlerts(NavState& s) {
 }
 
 void start(Mode m, const char* what) {
+  geomClear();          // a demo must never inherit the previous one's roads
   mode     = m;
   step     = 0;
   stepAtMs = millis();
@@ -166,6 +219,7 @@ void demoForce(char what) {
     case 'g': start(M_GLYPHS, "glyph parade"); break;
     case 'r': start(M_RIDE,   "scripted ride"); break;
     case 'a': start(M_ALERTS, "alerts"); break;
+    case 'j': start(M_JUNC,   "junctions"); break;
     default: break;
   }
 }
@@ -179,6 +233,7 @@ bool demoSerial() {
     case 'g': start(M_GLYPHS, "glyph parade - every maneuver, 1.8 s each"); return true;
     case 'r': start(M_RIDE,   "scripted ride");                             return true;
     case 'a': start(M_ALERTS, "alerts - call and message, riding and parked"); return true;
+    case 'j': start(M_JUNC,   "junctions - flyover, fork, roundabout");        return true;
     case 'b': displayBootBegin(); displayBootStage(2); displayBootFinish(true);
               displayInvalidate();
               Serial.println("demo: boot replayed"); return true;
@@ -289,6 +344,36 @@ void demoTick(NavState& s) {
         snprintf(s.notifyText, ALERT_TEXT_MAX, "%s", "Reached home safely? Call me");
         s.notifyAtMs = now;      // keep it inside its dwell for the whole step
       }
+      break;
+    }
+
+    case M_JUNC: {
+      /*
+        Three junctions on rotation, each rebuilt every tick so the view stays
+        inside GEOM_MAX_AGE_MS and the staleness path is exercised rather than
+        bypassed. Held at 300 m - the approach band, the one place a junction
+        drawing has time to be read.
+      */
+      if (now - stepAtMs >= JUNC_MS) { step = (step + 1) % 3; stepAtMs = now; }
+
+      static const char* const NAMES[] = { "Flyover, keep right",
+                                           "Three-way fork",
+                                           "Roundabout, 2nd exit" };
+      if (step == 0)      juncFlyover();
+      else if (step == 1) juncFork();
+      else                juncRoundabout();
+
+      clearAlerts(s);
+      // The arrow the phone would have sent anyway. It is suppressed while
+      // geometry is up, but it must still be right: below 100 m the geometry
+      // stands down and this is what the rider gets.
+      s.maneuver = (step == 2) ? (uint8_t)(MV_ROUNDABOUT_EXIT_BASE + 2)
+                               : MV_SLIGHT_RIGHT;
+      s.flags    = NAV_ACTIVE;
+      s.dist_m   = 300;
+      s.eta_min  = 9;
+      s.remaining_100m = 34;
+      snprintf(s.instruction, INSTRUCTION_MAX, "%s", NAMES[step]);
       break;
     }
 

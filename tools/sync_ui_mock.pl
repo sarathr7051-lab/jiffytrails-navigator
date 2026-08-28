@@ -33,6 +33,7 @@ my $DST = 'firmware/ui_mock/src';
 my @FILES = qw(
     nav_types.h
     glyph_data.h
+    geom.h     geom.cpp
     display.h  display.cpp
     maneuvers.h maneuvers.cpp
     demo.h     demo.cpp
