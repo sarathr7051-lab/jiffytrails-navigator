@@ -377,7 +377,20 @@ void demoTick(NavState& s) {
         s.notifyKind = NOTIFY_MESSAGE;
         snprintf(s.notifySrc,  ALERT_SRC_MAX,  "%s", "Appa");
         snprintf(s.notifyText, ALERT_TEXT_MAX, "%s", "Reached home safely? Call me");
-        s.notifyAtMs = now;      // keep it inside its dwell for the whole step
+        /*
+          stepAtMs, NOT now.
+
+          notifyAtMs is an ARRIVAL TIME. Re-stamping it every tick made every
+          frame look like a freshly arrived message, and both redraw keys are
+          built from it - the parked one in displayRender and the band one on
+          the nav path - so the screen repainted at loop rate. That is the
+          flicker, on both the riding and the parked alert steps.
+
+          stepAtMs is stable within a step, and ALERT_MS is 3500 against a
+          6000 ms dwell, so the alert stays up for the whole step without ever
+          claiming to be new.
+        */
+        s.notifyAtMs = stepAtMs;
       }
       break;
     }
