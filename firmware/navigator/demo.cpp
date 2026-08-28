@@ -130,44 +130,77 @@ uint32_t routeRemaining() {
   All three are cases where an arrow is not enough, which is the only
   justification for drawing a map at all.
 */
+/*
+  Every way runs OFF the edge of the window rather than stopping inside it, and
+  the road you are on starts BEHIND you.
+
+  The first version had three short stubs radiating from a point, and on the
+  panel it read as a pitchfork icon rather than a junction - which is exactly
+  what it was. Roads that terminate in mid-air are the difference between a map
+  and a symbol. The window is 120 m deep and about 120 m wide at this scale, so
+  anything past roughly +-700 dm laterally or 1250 dm forward is clipped, which
+  is what makes the edges look cut rather than drawn.
+*/
 void juncFlyover() {
   geomBegin();
-  // The cross road underneath. Broken automatically where the flyover passes.
-  geomWay(0, 0);       geomPt(-600, 700); geomPt(600, 700);
-  // The service road you are NOT taking: peels left, stays at grade.
-  geomWay(0, 0);       geomPt(0, 400);  geomPt(-140, 620); geomPt(-300, 980);
-  // Your path: up onto the flyover. layer 1 draws last and cuts the gap.
+  // The cross road underneath, running clear off both sides. Broken where the
+  // flyover passes over it.
+  geomWay(0, 0);  geomPt(-1100, 720); geomPt(1100, 700);
+  // A minor street behind the junction, for context. Real windows are not tidy.
+  geomWay(0, 0);  geomPt(-1100, 240); geomPt(-300, 250); geomPt(-260, -300);
+  // The service road you are NOT taking: peels left and stays at grade.
+  geomWay(0, 0);  geomPt(0, 380); geomPt(-260, 640); geomPt(-560, 1250);
+  // Your path: the road you are on, through you, and up onto the flyover.
+  // layer 1, so its halo cuts the gap in everything below.
   geomWay(1, GEOM_TAKEN);
-  geomPt(0, 0); geomPt(0, 400); geomPt(120, 640); geomPt(240, 1050);
+  geomPt(0, -350); geomPt(0, 380); geomPt(200, 700); geomPt(430, 1400);
   geomCommit(millis());
 }
 
 void juncFork() {
   geomBegin();
-  geomWay(0, 0);       geomPt(0, 420); geomPt(-200, 700); geomPt(-380, 1000);
-  geomWay(0, 0);       geomPt(0, 420); geomPt(20, 760);   geomPt(40, 1100);
+  // A cross street beyond the fork, so the branches go somewhere.
+  geomWay(0, 0);  geomPt(-1100, 1080); geomPt(1100, 1050);
+  // The two branches not taken, both running off the top.
+  geomWay(0, 0);  geomPt(0, 430); geomPt(-330, 780); geomPt(-620, 1400);
+  geomWay(0, 0);  geomPt(0, 430); geomPt(-40, 900);  geomPt(-30, 1400);
+  // Yours: from behind you, through the split, off the top right.
   geomWay(0, GEOM_TAKEN);
-  geomPt(0, 0); geomPt(0, 420); geomPt(180, 700); geomPt(330, 1020);
+  geomPt(0, -350); geomPt(0, 430); geomPt(300, 800); geomPt(560, 1400);
   geomCommit(millis());
 }
 
+/*
+  Ring centre (0, 640), radius 260. Every coordinate below is a literal.
+
+  It used to build the ring and the arms in loops from sinf/cosf. That was
+  tidier to read and it made the geometry invisible to tools/ascii_junction.pl,
+  which only parses literal integers - so the preview showed a bare ring with
+  no arms at all and looked like a bug in the renderer. Data a tool cannot read
+  is data nobody checks before it is flashed.
+
+  Arm angles are deliberately uneven. Evenly spaced exits are the tell of a
+  drawing rather than a map, and no real roundabout has them.
+*/
 void juncRoundabout() {
   geomBegin();
-  const int16_t ccy = 620, rr = 250;
 
-  // The ring, as a closed polyline. Twelve points is plenty at this size.
+  // Five arms, each starting ON the ring and running off the window.
+  geomWay(0, 0);           geomPt(-248,  717); geomPt(-1100,  980);  // north-west
+  geomWay(0, 0);           geomPt( -60,  893); geomPt( -180, 1400);  // north
+  geomWay(0, GEOM_TAKEN);  geomPt( 231,  760); geomPt(  980, 1150);  // 2nd exit
+  geomWay(0, 0);           geomPt( 250,  567); geomPt( 1100,  320);  // east
+  geomWay(0, 0);           geomPt(-253,  580); geomPt(-1100,  380);  // west
+
+  // The ring, drawn after the arms so it sits over their ends. Twelve points.
   geomWay(0, 0);
-  for (uint8_t i = 0; i <= 12; i++) {
-    const float a = 2.0f * 3.14159265f * i / 12.0f;
-    geomPt((int16_t)(rr * sinf(a)), (int16_t)(ccy - rr * cosf(a)));
-  }
-  // Exits you are not taking.
-  geomWay(0, 0); geomPt(-250, 620); geomPt(-600, 560);
-  geomWay(0, 0); geomPt(0, 870);    geomPt(-60, 1150);
-  geomWay(0, 0); geomPt(250, 620);  geomPt(560, 400);
-  // Entry and the exit taken.
-  geomWay(0, GEOM_TAKEN); geomPt(0, 0);   geomPt(0, 370);
-  geomWay(0, GEOM_TAKEN); geomPt(180, 800); geomPt(430, 1020);
+  geomPt(   0, 380); geomPt( 130, 415); geomPt( 225, 510); geomPt( 260, 640);
+  geomPt( 225, 770); geomPt( 130, 865); geomPt(   0, 900); geomPt(-130, 865);
+  geomPt(-225, 770); geomPt(-260, 640); geomPt(-225, 510); geomPt(-130, 415);
+  geomPt(   0, 380);
+
+  // Your entry, from behind you up to the ring.
+  geomWay(0, GEOM_TAKEN);  geomPt(0, -350); geomPt(0, 380);
   geomCommit(millis());
 }
 

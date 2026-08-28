@@ -37,7 +37,6 @@ my @junctions;
 while ($src =~ /void\s+(junc\w+)\s*\(\s*\)\s*\{(.*?)\n\}/gs) {
     my ($name, $body) = ($1, $2);
 
-    # The roundabout builds its ring in a loop; evaluate that specially.
     my @ways;
     my ($ccy, $rr) = (620, 250);
     $ccy = $1 if $body =~ /ccy\s*=\s*(\d+)/;
@@ -56,12 +55,13 @@ while ($src =~ /void\s+(junc\w+)\s*\(\s*\)\s*\{(.*?)\n\}/gs) {
         while ($line =~ /geomPt\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)/g) {
             push @{ $ways[-1]{pts} }, [$1, $2] if @ways;
         }
-        # The generated ring: geomPt(rr*sin a, ccy - rr*cos a) for i in 0..12
-        if ($line =~ /geomPt\(\(int16_t\)\(rr \* sinf/ && @ways) {
-            for my $i (0 .. 12) {
-                my $a = 2 * 3.14159265 * $i / 12;
-                push @{ $ways[-1]{pts} }, [ int($rr * sin($a)), int($ccy - $rr * cos($a)) ];
-            }
+        # Anything not written as literal integers is invisible here. That is
+        # deliberate and the junction builders are written to suit it: a
+        # loop-generated ring once rendered as no ring at all, which looked
+        # like a renderer bug and was really a parser blind spot. Data a tool
+        # cannot read is data nobody checks before flashing.
+        if ($line =~ /geomPt\s*\(\s*[^-\d\s)]/ && $line !~ /^\s*\/\//) {
+            warn "  ! non-literal geomPt ignored: " . ($line =~ s/^\s+//r) . "\n";
         }
     }
     push @junctions, { name => $name, ways => \@ways } if @ways;
