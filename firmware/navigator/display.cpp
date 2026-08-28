@@ -637,6 +637,34 @@ static void drawArrived(const NavState& s) {
   }
 }
 
+/*
+  The glyph box: junction geometry if there is any, otherwise the arrow.
+
+  Separate from drawChrome because geometry arrives at its own rate and must
+  NOT drag a full-screen repaint along with it. Treating a new window as a
+  chrome change repainted everything at the geometry's update rate, which on
+  the panel is a solid flicker - the same mistake as the idle alert band, made
+  twice in one week. Only this box is redrawn.
+
+  Below 100 m the arrow always wins, and this function is not called there: a
+  drawing has to be read, an arrow is recognised, and there is time to read a
+  junction at 300 m and none at 60.
+
+  With nothing received - every ride until the phone side of
+  ARCH_ANDROID_AUTO.md 2.2 exists - this is exactly the old behaviour. The
+  freshness test matters as much as the presence test: geometry that stopped
+  arriving is a picture of a junction already ridden through.
+*/
+static void drawNavGlyph(const NavState& s, bool far) {
+  const int16_t gx = far ? GLYPH_FAR_X : GLYPH_APP_X;
+  const int16_t gy = far ? GLYPH_FAR_Y : GLYPH_APP_Y;
+  const int16_t gs = far ? GLYPH_FAR_S : GLYPH_APP_S;
+
+  tft.fillRect(gx, gy, gs, gs, C_BG);
+  if (geomValid(millis())) geomDraw(tft, gx, gy, gs, C_FG, C_MUTED, C_BG);
+  else                     drawManeuver(tft, gx, gy, gs, s.maneuver, C_FG, C_BG);
+}
+
 static void drawChrome(const NavState& s, UiScreen scr) {
   switch (scr) {
     case UI_DISCONNECTED:
@@ -702,25 +730,7 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   }
   if (s.gpsWeak()) drawGpsWeak(true, C_MUTED, C_BG);
 
-  const int16_t gx = far ? GLYPH_FAR_X : GLYPH_APP_X;
-  const int16_t gy = far ? GLYPH_FAR_Y : GLYPH_APP_Y;
-  const int16_t gs = far ? GLYPH_FAR_S : GLYPH_APP_S;
-
-  /*
-    Junction geometry replaces the arrow when there is any, and only here.
-
-    Below 100 m the arrow always wins. A drawing has to be read; an arrow is
-    recognised. There is time to read a junction at 300 m and none at 60, and
-    the whole point of the committed screen is that it says one thing instantly.
-
-    When no geometry has arrived - which is every ride until the phone side of
-    ARCH_ANDROID_AUTO.md 2.2 exists - this is exactly the old behaviour. The
-    freshness test matters as much as the presence test: geometry that stopped
-    arriving is a picture of a junction you have already ridden through, and a
-    stale map is worse than no map.
-  */
-  if (geomValid(millis())) geomDraw(tft, gx, gy, gs, C_FG, C_MUTED, C_BG);
-  else                     drawManeuver(tft, gx, gy, gs, s.maneuver, C_FG, C_BG);
+  drawNavGlyph(s, far);
 }
 
 // --------------------------------------------------------- panel watchdog
@@ -1006,7 +1016,6 @@ void displayRender(const NavState& s) {
   if (navScreen && !changed) {
     changed = (s.maneuver != lastManeuver)
            || (s.gpsWeak() != lastGpsWeak)
-           || (geomKey(millis()) != lastGeomKey)
            || (strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
   }
 
@@ -1057,6 +1066,17 @@ void displayRender(const NavState& s) {
     lastClockKey = (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
     lastBattery  = s.phoneBatteryPct;
     lastFooter   = 0xFFFFFFFFu;
+  }
+
+  /*
+    Geometry moves at its own rate and owns only the glyph box, so it gets a
+    targeted redraw. Folding it into the chrome test instead repainted the
+    whole screen every time a window arrived, which at the demo's rate was a
+    solid flicker and at a real 1 Hz feed would be a flash every second.
+  */
+  if (scr == UI_NAV_FAR || scr == UI_NAV_APPROACH) {
+    const uint32_t gk = geomKey(millis());
+    if (gk != lastGeomKey) { drawNavGlyph(s, scr == UI_NAV_FAR); lastGeomKey = gk; }
   }
 
   // Idle and arrived: the chrome above has just repainted the screen, so an

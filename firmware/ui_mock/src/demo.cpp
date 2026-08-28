@@ -120,7 +120,8 @@ const uint16_t SPEED_TURN   = 4;
 
 uint16_t rideDist = 0;      // metres to the next maneuver
 uint8_t  rideLeg  = 0;
-uint32_t arriveAt = 0;      // millis() when the arrival screen started
+uint32_t arriveAt  = 0;     // millis() when the arrival screen started
+bool     juncBuilt = false; // geometry is rebuilt on step change, not per tick
 
 // Metres left on the whole route, for the footer. Recomputed rather than
 // cached, for the same reason the real parser recomputes it: NAV_DATA.md
@@ -211,6 +212,7 @@ void clearAlerts(NavState& s) {
 
 void start(Mode m, const char* what) {
   geomClear();          // a demo must never inherit the previous one's roads
+  juncBuilt = false;
   mode     = m;
   step     = 0;
   stepAtMs = millis();
@@ -365,14 +367,25 @@ void demoTick(NavState& s) {
         bypassed. Held at 300 m - the approach band, the one place a junction
         drawing has time to be read.
       */
-      if (now - stepAtMs >= JUNC_MS) { step = (step + 1) % 3; stepAtMs = now; }
+      bool rebuild = !juncBuilt;
+      if (now - stepAtMs >= JUNC_MS) { step = (step + 1) % 3; stepAtMs = now; rebuild = true; }
 
       static const char* const NAMES[] = { "Flyover, keep right",
                                            "Three-way fork",
                                            "Roundabout, 2nd exit" };
-      if (step == 0)      juncFlyover();
-      else if (step == 1) juncFork();
-      else                juncRoundabout();
+      /*
+        Only on a step change. Rebuilding every tick re-stamps the commit time,
+        which changes geomKey(), which asks the display to repaint the glyph box
+        every loop - a flicker with no new information in it. The rebuild
+        interval is well inside GEOM_MAX_AGE_MS, so the view never goes stale
+        between steps.
+      */
+      if (rebuild) {
+        if (step == 0)      juncFlyover();
+        else if (step == 1) juncFork();
+        else                juncRoundabout();
+        juncBuilt = true;
+      }
 
       clearAlerts(s);
       // The arrow the phone would have sent anyway. It is suppressed while
