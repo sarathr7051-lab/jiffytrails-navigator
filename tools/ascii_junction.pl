@@ -84,16 +84,25 @@ sub put {
     $buf[$y][$x] = $c if $RANK{$c} >= $RANK{ $buf[$y][$x] };
 }
 
+# A solid capsule: every pixel within w/2 of the segment. geom.cpp draws a quad
+# plus an octagonal joint, which is the same shape to within half a pixel - and
+# both are SOLID, which is the point. The version this replaced offset parallel
+# lines and left gaps on diagonals, exactly as the firmware did.
 sub stroke {
     my ($ax, $ay, $bx, $by, $w, $c) = @_;
     my ($dx, $dy) = ($bx - $ax, $by - $ay);
-    my $len = sqrt($dx * $dx + $dy * $dy) || 1;
-    my ($nx, $ny) = (-$dy / $len, $dx / $len);
-    for my $i (-int($w / 2) .. int($w / 2)) {
-        my $n = int($len) || 1;
-        for my $t (0 .. $n) {
-            put(int($ax + $dx * $t / $n + $nx * $i + 0.5),
-                int($ay + $dy * $t / $n + $ny * $i + 0.5), $c);
+    my $l2 = $dx * $dx + $dy * $dy;
+    my $r  = $w / 2;
+
+    my ($lo_x, $hi_x) = (sort { $a <=> $b } $ax, $bx)[0, 1];
+    my ($lo_y, $hi_y) = (sort { $a <=> $b } $ay, $by)[0, 1];
+
+    for my $y (int($lo_y - $r) .. int($hi_y + $r)) {
+        for my $x (int($lo_x - $r) .. int($hi_x + $r)) {
+            my $t = $l2 ? (($x - $ax) * $dx + ($y - $ay) * $dy) / $l2 : 0;
+            $t = 0 if $t < 0; $t = 1 if $t > 1;
+            my $px = $ax + $dx * $t, my $py = $ay + $dy * $t;
+            put($x, $y, $c) if ($x - $px) ** 2 + ($y - $py) ** 2 <= $r * $r;
         }
     }
 }
@@ -113,24 +122,31 @@ for my $j (@junctions) {
     my $sx = sub { $cx + int($_[0] * $S / ($DEPTH * 10)) };
     my $sy = sub { $cy - int($_[0] * $S / ($DEPTH * 10)) };
 
-    my $wThin  = $S >= 96 ? 5  : 4;
-    my $wThick = $S >= 96 ? 11 : 9;
+    my $wThin  = $S >= 96 ? 6  : 5;    # keep in step with geom.cpp
+    my $wThick = $S >= 96 ? 15 : 12;
     my $halo   = 10;   # keep in step with geom.cpp
 
+    # Casing pass then fill pass, PER LAYER - matching geom.cpp. Per-segment
+    # lets a halo notch the previous segment at every joint; per-way lets two
+    # roads on the SAME layer halo each other. A halo may only break layers
+    # below it, and drawing every halo on a layer before any ink is what makes
+    # that true.
     for my $layer (-2 .. 2) {
+      for my $pass (0, 1) {
         for my $w (@{ $j->{ways} }) {
             next unless defined $w->{layer};
             next unless $w->{layer} == $layer && @{ $w->{pts} } >= 2;
             my $wd = $w->{taken} ? $wThick : $wThin;
-            my $c  = $w->{taken} ? '#' : ':';
+            my $pw = $pass ? $wd : $wd + $halo;
+            my $pc = $pass ? ($w->{taken} ? '#' : ':') : ' ';
             my @p  = @{ $w->{pts} };
             for my $k (0 .. $#p - 1) {
-                my ($ax, $ay) = ($sx->($p[$k][0]),     $sy->($p[$k][1]));
-                my ($bx, $by) = ($sx->($p[$k+1][0]),   $sy->($p[$k+1][1]));
-                stroke($ax, $ay, $bx, $by, $wd + $halo, ' ');
-                stroke($ax, $ay, $bx, $by, $wd,         $c);
+                my ($ax, $ay) = ($sx->($p[$k][0]),   $sy->($p[$k][1]));
+                my ($bx, $by) = ($sx->($p[$k+1][0]), $sy->($p[$k+1][1]));
+                stroke($ax, $ay, $bx, $by, $pw, $pc);
             }
         }
+      }
     }
 
     my $r = $S >= 96 ? 7 : 6;

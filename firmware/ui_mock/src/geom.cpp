@@ -44,52 +44,96 @@ bool     vValid = false;
 
 // ---------------------------------------------------------------- clipping
 
-const uint8_t L = 1, R = 2, B = 4, T = 8;
+/*
+  Roads are filled polygons, not stacks of offset lines.
 
-uint8_t outcode(int x, int y, int x0, int y0, int x1, int y1) {
-  uint8_t c = 0;
-  if (x < x0) c |= L; else if (x > x1) c |= R;
-  if (y < y0) c |= T; else if (y > y1) c |= B;
-  return c;
-}
+  The first version drew a stroke as parallel drawLine copies offset along the
+  perpendicular. That is fine for a vertical or horizontal road and visibly
+  WRONG for a diagonal one: each copy is a 1 px Bresenham line, and shifting it
+  by (0.7, 0.7) rounds to whole pixels, so adjacent copies land on the same
+  pixels or leave a gap between them. On the panel a diagonal road rendered as
+  diagonal hatching - it looked like a dashed line, not a road.
 
-// Cohen-Sutherland. Returns false if the segment is entirely outside.
-bool clipSeg(int& ax, int& ay, int& bx, int& by,
-             int x0, int y0, int x1, int y1) {
-  uint8_t ca = outcode(ax, ay, x0, y0, x1, y1);
-  uint8_t cb = outcode(bx, by, x0, y0, x1, y1);
+  A segment is now one quad and a joint is one octagon, both clipped to the box
+  with Sutherland-Hodgman and filled as a triangle fan. Solid at every angle,
+  and the clip is exact rather than per-line.
+*/
 
-  for (uint8_t guard = 0; guard < 8; guard++) {
-    if (!(ca | cb))  return true;    // both inside
-    if (ca & cb)     return false;   // both beyond the same edge
+struct Pf { float x, y; };
 
-    const uint8_t c = ca ? ca : cb;
-    int nx = 0, ny = 0;
-
-    if (c & B)      { nx = ax + (bx - ax) * (y1 - ay) / (by - ay); ny = y1; }
-    else if (c & T) { nx = ax + (bx - ax) * (y0 - ay) / (by - ay); ny = y0; }
-    else if (c & R) { ny = ay + (by - ay) * (x1 - ax) / (bx - ax); nx = x1; }
-    else            { ny = ay + (by - ay) * (x0 - ax) / (bx - ax); nx = x0; }
-
-    if (c == ca) { ax = nx; ay = ny; ca = outcode(ax, ay, x0, y0, x1, y1); }
-    else         { bx = nx; by = ny; cb = outcode(bx, by, x0, y0, x1, y1); }
+// side: 0 keep x>=v, 1 keep x<=v, 2 keep y>=v, 3 keep y<=v
+inline bool inSide(const Pf& p, int side, float v) {
+  switch (side) {
+    case 0:  return p.x >= v;
+    case 1:  return p.x <= v;
+    case 2:  return p.y >= v;
+    default: return p.y <= v;
   }
-  return false;
 }
 
-// A stroke of width w offset along the perpendicular, clipped to the box.
+inline Pf cross(const Pf& a, const Pf& b, int side, float v) {
+  const float t = (side < 2) ? (v - a.x) / (b.x - a.x)
+                             : (v - a.y) / (b.y - a.y);
+  return Pf{ a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t };
+}
+
+int clipTo(const Pf* in, int n, Pf* out, int side, float v) {
+  int m = 0;
+  for (int i = 0; i < n; i++) {
+    const Pf& a = in[i];
+    const Pf& b = in[(i + 1) % n];
+    const bool ia = inSide(a, side, v), ib = inSide(b, side, v);
+    if (ia)        out[m++] = a;
+    if (ia != ib)  out[m++] = cross(a, b, side, v);
+    if (m >= 14) break;                    // cannot happen; refuses to overflow
+  }
+  return m;
+}
+
+void fillClipped(TFT_eSPI& g, const Pf* poly, int n,
+                 int x0, int y0, int x1, int y1, uint16_t c) {
+  Pf a[16], b[16];
+  int m = n;
+  for (int i = 0; i < n && i < 16; i++) a[i] = poly[i];
+
+  m = clipTo(a, m, b, 0, (float)x0);       if (m < 3) return;
+  m = clipTo(b, m, a, 1, (float)x1);       if (m < 3) return;
+  m = clipTo(a, m, b, 2, (float)y0);       if (m < 3) return;
+  m = clipTo(b, m, a, 3, (float)y1);       if (m < 3) return;
+
+  for (int i = 1; i + 1 < m; i++) {
+    g.fillTriangle((int)(a[0].x + 0.5f),     (int)(a[0].y + 0.5f),
+                   (int)(a[i].x + 0.5f),     (int)(a[i].y + 0.5f),
+                   (int)(a[i + 1].x + 0.5f), (int)(a[i + 1].y + 0.5f), c);
+  }
+}
+
+// One segment, as a quad of width w.
 void road(TFT_eSPI& tft, int ax, int ay, int bx, int by, int w, uint16_t c,
           int x0, int y0, int x1, int y1) {
   const float dx = bx - ax, dy = by - ay;
   const float len = sqrtf(dx * dx + dy * dy);
   if (len < 0.5f) return;
-  const float nx = -dy / len, ny = dx / len;
+  const float h = w * 0.5f;
+  const float nx = -dy / len * h, ny = dx / len * h;
 
-  for (int i = -w / 2; i <= w / 2; i++) {
-    int px = ax + (int)(nx * i), py = ay + (int)(ny * i);
-    int qx = bx + (int)(nx * i), qy = by + (int)(ny * i);
-    if (clipSeg(px, py, qx, qy, x0, y0, x1, y1)) tft.drawLine(px, py, qx, qy, c);
+  const Pf quad[4] = { { ax + nx, ay + ny }, { bx + nx, by + ny },
+                       { bx - nx, by - ny }, { ax - nx, ay - ny } };
+  fillClipped(tft, quad, 4, x0, y0, x1, y1, c);
+}
+
+// A round join, as an octagon. Without one, two segments meeting at an angle
+// leave a notch on the outside of the corner - most visible on a roundabout,
+// which is nothing but corners.
+void joint(TFT_eSPI& tft, int x, int y, int w, uint16_t c,
+           int x0, int y0, int x1, int y1) {
+  const float r = w * 0.5f;
+  Pf o[8];
+  for (int i = 0; i < 8; i++) {
+    const float a = 3.14159265f * (2 * i + 1) / 8.0f;   // rotated: flat top
+    o[i] = Pf{ x + r * cosf(a), y + r * sinf(a) };
   }
+  fillClipped(tft, o, 8, x0, y0, x1, y1, c);
 }
 
 }  // namespace
@@ -143,8 +187,19 @@ void geomDraw(TFT_eSPI& tft, int16_t x, int16_t y, int16_t s,
   auto sx = [&](int16_t dm) { return cx + (int)((long)dm * s / (GEOM_DEPTH_M * 10)); };
   auto sy = [&](int16_t dm) { return cy - (int)((long)dm * s / (GEOM_DEPTH_M * 10)); };
 
-  const int wThin  = (s >= 96) ? 5  : 4;
-  const int wThick = (s >= 96) ? 11 : 9;
+  /*
+    Weights, raised after seeing the first render on the panel.
+
+    5 px and 11 px were chosen on the laptop and looked thin and washed out on
+    a TN panel at 700 mm, where the black level greys out at the handlebar
+    viewing angle. Contrast against a poor ground beats stroke economy, and the
+    same lesson already forced the night text up from 70% to 88%.
+
+    The ratio matters more than either number: the route has to be obviously
+    heavier than the roads around it, or the drawing becomes a puzzle.
+  */
+  const int wThin  = (s >= 96) ? 6  : 5;
+  const int wThick = (s >= 96) ? 15 : 12;
   /*
     The gap a higher layer punches through a lower one, total across both
     sides. 4 gave 2 px of clearance, which is about 1.7 arc-minutes at the
@@ -164,20 +219,38 @@ void geomDraw(TFT_eSPI& tft, int16_t x, int16_t y, int16_t s,
     passing over it. No depth cue, no shading, no third colour - just draw
     order, which is all this panel can afford.
   */
+  /*
+    Casing pass then fill pass, PER LAYER - the order every map renderer uses,
+    and it has to be this way round for two separate reasons.
+
+    Per SEGMENT was wrong: the next segment's halo bit a notch out of the
+    previous segment's ink at every joint, and a roundabout ring came out as a
+    dotted circle.
+
+    Per WAY was still wrong, and more subtly: two roads at the SAME layer
+    haloed each other, so a side road punched gaps in the cross street it
+    merely touched. A halo must only break layers BELOW it. Drawing every halo
+    on a layer before any ink on that layer is what makes that true.
+  */
   for (int layer = -2; layer <= 2; layer++) {
-    for (uint8_t i = 0; i < vWays; i++) {
-      const GeomWay& wv = ways[i];
-      if (wv.layer != layer || wv.n < 2) continue;
+    for (uint8_t pass = 0; pass < 2; pass++) {
+      for (uint8_t i = 0; i < vWays; i++) {
+        const GeomWay& wv = ways[i];
+        if (wv.layer != layer || wv.n < 2) continue;
 
-      const bool taken = (wv.flags & GEOM_TAKEN);
-      const int  w     = taken ? wThick : wThin;
-      const uint16_t c = taken ? fg : muted;
+        const bool taken = (wv.flags & GEOM_TAKEN);
+        const int  w     = taken ? wThick : wThin;
+        const int  pw    = pass ? w : w + halo;
+        const uint16_t pc = pass ? (taken ? fg : muted) : bg;
 
-      for (uint8_t p = wv.first; p + 1 < wv.first + wv.n; p++) {
-        const int ax = sx(pts[p].x_dm),     ay = sy(pts[p].y_dm);
-        const int bx = sx(pts[p + 1].x_dm), by = sy(pts[p + 1].y_dm);
-        road(tft, ax, ay, bx, by, w + halo, bg, x0, y0, x1, y1);
-        road(tft, ax, ay, bx, by, w,        c,  x0, y0, x1, y1);
+        for (uint8_t p = wv.first; p + 1 < wv.first + wv.n; p++) {
+          const int ax = sx(pts[p].x_dm),     ay = sy(pts[p].y_dm);
+          const int bx = sx(pts[p + 1].x_dm), by = sy(pts[p + 1].y_dm);
+          road(tft, ax, ay, bx, by, pw, pc, x0, y0, x1, y1);
+          // Joints on interior vertices only. The ends of a way are clipped
+          // edges or dead ends; neither needs a cap.
+          if (p + 2 < wv.first + wv.n) joint(tft, bx, by, pw, pc, x0, y0, x1, y1);
+        }
       }
     }
   }
