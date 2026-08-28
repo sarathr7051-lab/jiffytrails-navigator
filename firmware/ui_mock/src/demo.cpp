@@ -93,7 +93,7 @@ const uint8_t EXTRA_N = sizeof(EXTRA) / sizeof(EXTRA[0]);
 */
 struct Leg { uint8_t mv; const char* road; uint16_t len; };
 const Leg RIDE_LEGS[] = {
-  { MV_CONTINUE,     "Panampilly Nagar Rd",  900 },
+  { MV_CONTINUE,     "Panampilly Nagar Rd", 1200 },   // crosses the km boundary
   { MV_TURN_RIGHT,   "Moulana Azad Rd",      620 },
   { MV_FORK_RIGHT,   "Thevara Ferry Rd",     380 },
   { MV_EXIT_LEFT,    "Kochi-Fort Rd",        300 },

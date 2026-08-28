@@ -213,7 +213,20 @@ static void layoutDistance(TFT_eSPI& g, int32_t m, int16_t ox, int16_t oy,
   const char* unit;
   uint8_t numFont;
 
-  if (m > 1000) {
+  /*
+    >= and not >, and the difference is a clipped digit.
+
+    Font 8 digits are 55 px. The field is SPR_W 208 wide, and the unit takes
+    pad 8 + "m" 22 + gap 6 = 36, leaving 172 for the number. Three digits is
+    165 and fits; four is 220 and overruns by 48, so the leading digit is cut
+    off on the left and 1000 m renders as "000 m".
+
+    With >, exactly 1000 took the metres branch and did precisely that. It is
+    reachable in normal use: above 500 m the phone quantises to 100 m steps, so
+    the sequence really is 1200, 1100, 1000, 900 - and a long "continue"
+    instruction sits in that range for minutes at a time.
+  */
+  if (m >= 1000) {
     snprintf(num, sizeof(num), "%ld.%ld", (long)(m / 1000), (long)((m % 1000) / 100));
     unit = "km"; numFont = 6;
   } else {
