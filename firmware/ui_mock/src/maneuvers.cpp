@@ -84,8 +84,19 @@ void runOps(TFT_eSPI& tft, const Box& b, const GlyphOp* ops,
         break;
 
       case OP_LINE: {
-        // A stroke built from parallel copies offset in x. Cheap, and correct
-        // enough for strokes that are never near-horizontal - which none are.
+        /*
+          A stroke built from parallel copies offset in x.
+
+          ★ The operand is NOT a perpendicular width. Offsetting along x gives
+          w_perp = e * |sin t| for a stroke at angle t to the horizontal, so at
+          45 degrees it draws 0.707 e. Every diagonal in the glyph set was once
+          written e=15 to match the 15-wide rectangles beside it and drew 10.6.
+          glyph_data.h now uses D=23 and Dt=14 for that reason; read the note
+          there before writing a new OP_LINE.
+
+          It is still correct enough for strokes that are never near-horizontal,
+          and none in this set are - every one is exactly 45 degrees.
+        */
         const int w = b.p(o->e);
         const int x0 = b.px(o->a), y0 = b.py(o->b);
         const int x1 = b.px(o->c), y1 = b.py(o->d);
@@ -150,7 +161,9 @@ void drawManeuver(TFT_eSPI& tft, int x, int y, int s,
     tft.setTextDatum(MC_DATUM);
     // Font 4 digits are 26 px tall and that is absolute, not scaled with the
     // box. In the 64 px far-band box a font-4 digit would touch the ring.
-    tft.drawString(n, b.px(82), b.py(44), (s >= 88) ? 4 : 2);
+    // On the ring's exit axis and its centre line. Moved from (82,44) when the
+    // ring was resized to match the head width - see SPEC_MANEUVER_ICONS.md.
+    tft.drawString(n, b.px(78), b.py(40), (s >= 88) ? 4 : 2);
     return;
   }
 
