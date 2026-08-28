@@ -126,6 +126,12 @@ for my $j (@junctions) {
     my $wThick = $S >= 96 ? 15 : 12;
     my $halo   = 10;   # keep in step with geom.cpp
 
+    my $minLayer = 2;
+    for my $w (@{ $j->{ways} }) {
+        next unless defined $w->{layer} && @{ $w->{pts} } >= 2;
+        $minLayer = $w->{layer} if $w->{layer} < $minLayer;
+    }
+
     # Casing pass then fill pass, PER LAYER - matching geom.cpp. Per-segment
     # lets a halo notch the previous segment at every joint; per-way lets two
     # roads on the SAME layer halo each other. A halo may only break layers
@@ -133,6 +139,7 @@ for my $j (@junctions) {
     # that true.
     for my $layer (-2 .. 2) {
       for my $pass (0, 1) {
+        next if $pass == 0 && $layer == $minLayer;   # nothing beneath to break
         for my $w (@{ $j->{ways} }) {
             next unless defined $w->{layer};
             next unless $w->{layer} == $layer && @{ $w->{pts} } >= 2;

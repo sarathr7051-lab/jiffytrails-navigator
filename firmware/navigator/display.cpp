@@ -140,8 +140,26 @@ static_assert(GLYPH_FAR_Y + GLYPH_FAR_S / 2 == DIST_Y_FAR   + SPR_H / 2, "far ro
 static_assert(GLYPH_APP_Y + GLYPH_APP_S / 2 == DIST_Y_OTHER + SPR_H / 2, "approach row misaligned");
 static_assert(GLYPH_BIG_Y + GLYPH_BIG_S / 2 == DIST_Y_OTHER + SPR_H / 2, "committed row misaligned");
 
-// Nothing in the main row may run under the band.
-static_assert(GLYPH_APP_Y + GLYPH_APP_S <= 190, "approach glyph runs into the band");
+/*
+  Where an alert starts, per screen. These were literals inside drawBand and the
+  asserts below tested the main row against BAND_Y (190) instead - which on the
+  approach screen is 10 px of slack the assert claimed to be guarding and was
+  not, because an alert there starts at 180. Nothing is broken today, but a
+  guard that does not guard what its message says is worse than no guard: it
+  invites the next edit to trust it.
+
+  Bounded by what sits above them. Far: glyph ends 152, sprite ends 150.
+  Approach: glyph ends 176. Committed and turn-now suppress alerts entirely, so
+  they genuinely use BAND_Y.
+*/
+static const int16_t ALERT_TOP_FAR  = 156;
+static const int16_t ALERT_TOP_APP  = 180;
+static const int16_t ALERT_TOP_IDLE = 0;    // parked, the message IS the screen
+
+// Nothing in the main row may run under the region an alert can occupy.
+static_assert(GLYPH_FAR_Y + GLYPH_FAR_S <= ALERT_TOP_FAR, "far glyph runs into the alert");
+static_assert(DIST_Y_FAR  + SPR_H       <= ALERT_TOP_FAR, "far sprite runs into the alert");
+static_assert(GLYPH_APP_Y + GLYPH_APP_S <= ALERT_TOP_APP, "approach glyph runs into the alert");
 static_assert(GLYPH_BIG_Y + GLYPH_BIG_S <= 190, "committed glyph runs into the band");
 
 // ------------------------------------------------------------ redraw state
@@ -361,22 +379,6 @@ static void drawWrapped(const char* text, int16_t x, int16_t y,
   }
 }
 
-static void drawFitted(const char* text, int16_t x, int16_t y, int16_t maxW, uint8_t font) {
-  char buf[ALERT_TEXT_MAX + 4];
-  snprintf(buf, sizeof(buf), "%s", text);
-  if (tft.textWidth(buf, font) <= maxW) {
-    tft.drawString(buf, x, y, font);
-    return;
-  }
-  size_t n = strlen(buf);
-  while (n > 1) {
-    buf[--n] = '\0';
-    char probe[ALERT_TEXT_MAX + 4];
-    snprintf(probe, sizeof(probe), "%s...", buf);
-    if (tft.textWidth(probe, font) <= maxW) { tft.drawString(probe, x, y, font); return; }
-  }
-}
-
 // `scr` decides what "blank" means. The sub-30 m screen is drawn inverted, so
 // clearing the band to C_BG painted a white stripe across the bottom of a black
 // screen - which read as a large empty alert rather than as nothing at all.
@@ -423,9 +425,9 @@ static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
     only thing you are doing at that moment.
   */
   const int16_t alertTop =
-      (scr == UI_IDLE || scr == UI_ARRIVED) ? 0
-    : (scr == UI_NAV_FAR)                   ? 156
-    : (scr == UI_NAV_APPROACH)              ? 180
+      (scr == UI_IDLE || scr == UI_ARRIVED) ? ALERT_TOP_IDLE
+    : (scr == UI_NAV_FAR)                   ? ALERT_TOP_FAR
+    : (scr == UI_NAV_APPROACH)              ? ALERT_TOP_APP
     :                                         BAND_Y;
   const int16_t alertH = H - alertTop;
 
@@ -822,6 +824,27 @@ static uint32_t panelRecoveries  = 0;
 static bool     panelReadable    = false;
 
 
+/*
+  What makes one notification DIFFERENT from another - the message, not when it
+  arrived.
+
+  The band was keyed on notifyAtMs, which is a wall clock reading. Any source
+  that re-stamps it repaints the band for no new information: the alerts demo
+  did it every loop and strobed the whole screen, and a phone that re-posts the
+  same notification once a second would repaint at 1 Hz on a real ride. The
+  identity of an alert is its content.
+
+  FNV-1a over kind, source and text. The top bit is forced so the value is
+  never zero, which the parked path uses to mean "no alert".
+*/
+static uint32_t notifyIdentity(const NavState& s) {
+  uint32_t h = 2166136261u;
+  h = (h ^ s.notifyKind) * 16777619u;
+  for (const char* p = s.notifySrc;  *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
+  for (const char* p = s.notifyText; *p; ++p) h = (h ^ (uint8_t)*p) * 16777619u;
+  return h | 0x40000000u;
+}
+
 // ------------------------------------------------------------------ boot
 /*
   The startup sequence.
@@ -1084,7 +1107,7 @@ void displayRender(const NavState& s) {
   // this loop rate is a solid flicker - and would also miss a second caller
   // arriving while the first band is still up, since both are BAND_CALL.
   const uint32_t idleKey = (band == BAND_CALL)   ? (0x0C000000u | s.callState)
-                         : (band == BAND_NOTIFY) ? (s.notifyAtMs | 0x40000000u)
+                         : (band == BAND_NOTIFY) ? notifyIdentity(s)
                          : 0;
   if (fullScreenAlert && idleKey != lastIdleKey) changed = true;
 
@@ -1130,7 +1153,7 @@ void displayRender(const NavState& s) {
   switch (band) {
     case BAND_FOOTER: bandKey = ((uint32_t)s.eta_min << 16) | s.remaining_100m; break;
     case BAND_CALL:   bandKey = 0x0C000000u | s.callState; break;
-    case BAND_NOTIFY: bandKey = s.notifyAtMs | 0x40000000u; break;
+    case BAND_NOTIFY: bandKey = notifyIdentity(s); break;
     // scr is folded in below, so an alert that outlives a screen change is
     // redrawn against the new ground rather than left on the old one.
     default:          bandKey = 0; break;

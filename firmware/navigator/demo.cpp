@@ -34,6 +34,16 @@ const uint32_t JUNC_MS  = 3000;   // long enough to work out what you are seeing
 // Deliberately not derived from the enum - a name is for a human, and
 // "SLIGHT RIGHT" reads better at a glance than MV_SLIGHT_RIGHT.
 const char* nameFor(uint8_t code) {
+  // The exit-numbered block is a RANGE, so it cannot be a switch label - and
+  // without this the last frames of the parade were labelled "Unknown" while
+  // drawing a perfectly good roundabout with a digit in it. The three frames
+  // the parade exists to make somebody look at were the three it mislabelled.
+  static char rab[24];
+  if (code > MV_ROUNDABOUT_EXIT_BASE && code <= MV_ROUNDABOUT_EXIT_BASE + 0x0F) {
+    snprintf(rab, sizeof(rab), "Roundabout, exit %d", code - MV_ROUNDABOUT_EXIT_BASE);
+    return rab;
+  }
+
   switch (code) {
     case MV_CONTINUE:     return "Continue";
     case MV_TURN_LEFT:    return "Turn left";
@@ -141,18 +151,40 @@ uint32_t routeRemaining() {
   anything past roughly +-700 dm laterally or 1250 dm forward is clipped, which
   is what makes the edges look cut rather than drawn.
 */
+/*
+  LAYERS ARE RELATIVE, and that is the whole trick here.
+
+  The first version put the route on layer 1 for its entire length. Its halo -
+  the 25 px casing an elevated way carries - was then centred on (0,380), the
+  exact vertex the service road branches from, and ate the first 12 px of it.
+  The service road appeared to start in mid-air. That is the pitchfork failure
+  arriving through the layer field instead of through the coordinates.
+
+  Splitting the route into an at-grade half and an elevated half only moved the
+  problem: the elevated half's halo then bit its own at-grade half, and the
+  route narrowed where the ramp lifts off.
+
+  The fix is to stop raising the route at all and LOWER the road it crosses.
+  Nothing else changes visually - a halo only cares about the difference - and
+  now every way that MEETS another shares its layer, while the only pair that
+  CROSSES differs. A halo must break what a road crosses and never what it
+  meets, and expressing it this way makes that true by construction.
+
+  The service road also stops ON the cross road rather than running through it.
+  It is at grade; it joins that junction, it does not fly over it, and a road
+  that ended past it would have to be broken to stay honest.
+*/
 void juncFlyover() {
   geomBegin();
-  // The cross road underneath, running clear off both sides. Broken where the
-  // flyover passes over it.
-  geomWay(0, 0);  geomPt(-1100, 720); geomPt(1100, 700);
+  // The cross road, one level down - the only thing here that is crossed.
+  geomWay(-1, 0);  geomPt(-1100, 720); geomPt(1100, 700);
   // A minor street behind the junction, for context. Real windows are not tidy.
-  geomWay(0, 0);  geomPt(-1100, 240); geomPt(-300, 250); geomPt(-260, -300);
-  // The service road you are NOT taking: peels left and stays at grade.
-  geomWay(0, 0);  geomPt(0, 380); geomPt(-260, 640); geomPt(-560, 1250);
-  // Your path: the road you are on, through you, and up onto the flyover.
-  // layer 1, so its halo cuts the gap in everything below.
-  geomWay(1, GEOM_TAKEN);
+  geomWay(0, 0);   geomPt(-1100, 240); geomPt(-300, 250); geomPt(-260, -300);
+  // The service road you are NOT taking: peels left, stays at grade, and joins
+  // the cross road rather than crossing it.
+  geomWay(0, 0);   geomPt(0, 380); geomPt(-260, 640); geomPt(-420, 712);
+  // Your path: from behind you, through the junction, over the cross road.
+  geomWay(0, GEOM_TAKEN);
   geomPt(0, -350); geomPt(0, 380); geomPt(200, 700); geomPt(430, 1400);
   geomCommit(millis());
 }
@@ -218,7 +250,20 @@ void baseline(NavState& s) {
   // the ARRIVED screen and ignored every keypress.
   s.showArrival  = false;
   s.arrivedAtMs  = 0;
-  s.night        = false;
+
+  /*
+    s.night is deliberately NOT touched.
+
+    It used to be forced false here, and that was the one faked field with no
+    way back. Every other value baseline() invents - the clock, the battery -
+    is refreshed by PKT_STATUS at about 1 Hz, so it self-heals within a second
+    of 'x'. night has exactly one writer, handleConfig, and CONFIG arrives on
+    connect and on a polarity change and at no other time.
+
+    So starting a demo at night flooded the panel white, and stopping it left
+    the panel white indefinitely. That is precisely the failure the palette
+    comments spend two paragraphs arguing must never happen.
+  */
   s.clockValid   = true;
   s.clockHour    = 18;
   s.clockMin     = 42;
@@ -272,7 +317,20 @@ bool demoSerial() {
     case 'b': displayBootBegin(); displayBootStage(2); displayBootFinish(true);
               displayInvalidate();
               Serial.println("demo: boot replayed"); return true;
-    case 'x': mode = M_OFF; displayInvalidate();
+    /*
+      geomClear on the way OUT, not just on the way in.
+
+      It used to live only in start(), so pressing 'x' left the committed view
+      alive for GEOM_MAX_AGE_MS. With a phone connected and a real route
+      running, the display then drew the synthetic Kochi roundabout in the
+      glyph box - a fabricated map of roads that do not exist, standing where
+      the actual instruction should be, for six seconds after the demo was
+      supposedly handed back.
+
+      Invisible on the bench, because with no phone UI_DISCONNECTED outranks it
+      and hides the symptom. That is what makes it a road bug.
+    */
+    case 'x': mode = M_OFF; geomClear(); displayInvalidate();
               Serial.println("demo: off - display handed back to the phone");
               return true;
     default:  return false;

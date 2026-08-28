@@ -129,7 +129,17 @@ void joint(TFT_eSPI& tft, int x, int y, int w, uint16_t c,
 
 // ------------------------------------------------------------------ build
 
-void geomBegin() { nPts = 0; nWays = 0; }
+void geomBegin() {
+  nPts = 0; nWays = 0;
+  // Unpublish immediately. geomDraw indexes the LIVE arrays with the COMMITTED
+  // counts, so a render landing mid-build would draw old counts over
+  // half-overwritten coordinates. Nothing calls this across loop iterations
+  // today - the demo builds atomically - but a BLE-fed window will arrive from
+  // a NimBLE callback while displayRender runs on the main loop, and then it
+  // would. The header promises a half transfer cannot reach the screen; this
+  // is what makes that true.
+  vValid = false;
+}
 
 bool geomWay(int8_t layer, uint8_t flags) {
   if (nWays >= GEOM_MAX_WAYS) return false;
@@ -221,8 +231,24 @@ void geomDraw(TFT_eSPI& tft, int16_t x, int16_t y, int16_t s,
     merely touched. A halo must only break layers BELOW it. Drawing every halo
     on a layer before any ink on that layer is what makes that true.
   */
+  /*
+    A casing is only meaningful when something is BELOW it. Ways on the lowest
+    layer present get their ink and no halo.
+
+    Without this, a window where every road is at grade - which is most windows
+    in a real OSM extract - pays for a casing pass that can only do harm: it
+    breaks roads that MEET rather than cross, at every junction, for no depth
+    information at all. The halo exists to say "this passes over that", and
+    where there is no "that" it says nothing and costs ink.
+  */
+  int minLayer = 2;
+  for (uint8_t i = 0; i < vWays; i++) {
+    if (ways[i].n >= 2 && ways[i].layer < minLayer) minLayer = ways[i].layer;
+  }
+
   for (int layer = -2; layer <= 2; layer++) {
     for (uint8_t pass = 0; pass < 2; pass++) {
+      if (pass == 0 && layer == minLayer) continue;   // nothing beneath to break
       for (uint8_t i = 0; i < vWays; i++) {
         const GeomWay& wv = ways[i];
         if (wv.layer != layer || wv.n < 2) continue;
