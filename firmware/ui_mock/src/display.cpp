@@ -127,6 +127,12 @@ static const int16_t ARROW_ZONE = SPR_X - 4;
 static const int16_t GLYPH_FAR_X =  8, GLYPH_FAR_Y = 68,  GLYPH_FAR_S = 84;
 static const int16_t GLYPH_APP_X =  6, GLYPH_APP_Y = 80,  GLYPH_APP_S = 96;
 static const int16_t GLYPH_BIG_X =  4, GLYPH_BIG_Y = 76,  GLYPH_BIG_S = 104;
+
+// The turn-now frame. Must clear the glyph and the distance sprite, or the
+// next distance push paints over the bottom bar and it flickers once per
+// 10 m step - the same trap the geometry box fell into.
+static const int16_t NOW_BAR_H = 14;
+static_assert(NOW_BAR_H <= GLYPH_BIG_Y, "top bar overlaps the turn-now glyph");
 static_assert(GLYPH_FAR_X + GLYPH_FAR_S <= 108, "far glyph runs under the sprite");
 static_assert(GLYPH_BIG_X + GLYPH_BIG_S <= ARROW_ZONE, "glyph runs under the sprite");
 static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the sprite");
@@ -134,6 +140,10 @@ static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the spr
 // Sprite origins. SPR_H is 80, so the row centre is DIST_Y + 40.
 static const int16_t DIST_Y_FAR   = 70;   // centre 110, clears the taller footer
 static const int16_t DIST_Y_OTHER = 88;   // centre 128
+
+// The distance sprite must clear the turn-now bottom bar, or every 10 m step
+// repaints over it and the frame flickers.
+static_assert(DIST_Y_OTHER + SPR_H <= H - NOW_BAR_H, "sprite overlaps the turn-now bar");
 
 // Arrow and number must sit on the same centre line, or the row reads as two
 // unrelated objects. Checked here so a future nudge to either cannot drift.
@@ -703,11 +713,35 @@ static void drawChrome(const NavState& s, UiScreen scr) {
       return;
 
     case UI_NAV_NOW: {
-      // Inverted below 30 m. A change of state you cannot miss at a junction.
-      tft.fillScreen(C_INV_BG);
+      /*
+        Under 30 m: framed, not inverted.
+
+        This used to flip the whole screen to black. It was chosen because a
+        large luminance change is the most blur- and glare-robust signal this
+        panel has, and that reasoning is sound - but it was reported twice from
+        the bike as looking like a fault, and reading as a fault is a real
+        defect whatever the theory says. A rider who thinks the display has
+        glitched at 20 m from a junction is worse off than one who was never
+        signalled at all.
+
+        It was also genuinely wrong at night. displaySetNight swaps C_INV_BG to
+        ~88% white, so the "inversion" became a full 320x240 flood of near-white
+        straight into a dark-adapted eye, at a junction, on an unlit road -
+        exactly what night mode exists to prevent. The comment on C_INV_BG
+        reasons about a 50 px alert band and this is the whole screen.
+
+        Two 14 px bars instead. Peripheral vision is most sensitive to large
+        low-frequency luminance edges, which is what a frame is, and it costs
+        8,960 px against 76,800 - about 5 ms rather than 45. It also inverts
+        safely at night, because a bar is small enough to be bright without
+        flooding anything.
+      */
+      tft.fillScreen(C_BG);
+      tft.fillRect(0, 0,        W, NOW_BAR_H, C_FG);
+      tft.fillRect(0, H - NOW_BAR_H, W, NOW_BAR_H, C_FG);
       drawManeuver(tft, GLYPH_BIG_X, GLYPH_BIG_Y, GLYPH_BIG_S, s.maneuver,
-                   C_INV_FG, C_INV_BG);
-      if (s.gpsWeak()) drawGpsWeak(false, C_INV_FG, C_INV_BG);
+                   C_FG, C_BG);
+      if (s.gpsWeak()) drawGpsWeak(false, C_FG, C_BG);
       return;
     }
 
@@ -1121,7 +1155,9 @@ void displayRender(const NavState& s) {
   if ((int32_t)s.dist_m == lastDist) return;
   lastDist = s.dist_m;
 
-  if (scr == UI_NAV_NOW)      pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_INV_FG, C_INV_BG);
+  // Positive polarity now on every nav screen; the turn-now screen is framed
+  // rather than inverted, so nothing here needs the inverted palette.
+  if (scr == UI_NAV_NOW)      pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_FG, C_BG);
   else if (scr == UI_NAV_FAR) pushDistance(s.dist_m, SPR_X, DIST_Y_FAR,   C_FG, C_BG);
   else                        pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_FG, C_BG);
 }
