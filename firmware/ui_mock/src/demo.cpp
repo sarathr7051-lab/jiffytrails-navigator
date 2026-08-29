@@ -29,7 +29,7 @@
 
 namespace {
 
-enum Mode : uint8_t { M_OFF, M_GLYPHS, M_RIDE, M_ALERTS, M_JUNC };   // M_ prefix: plain
+enum Mode : uint8_t { M_OFF, M_GLYPHS, M_RIDE, M_ALERTS, M_JUNC, M_FLOW };   // M_ prefix: plain
                                                              // GLYPHS collides with
                                                              // the glyph table.
 
@@ -105,7 +105,11 @@ const uint8_t EXTRA_N = sizeof(EXTRA) / sizeof(EXTRA[0]);
 */
 struct Leg { uint8_t mv; const char* road; uint16_t len; };
 const Leg RIDE_LEGS[] = {
-  { MV_CONTINUE,     "Panampilly Nagar Rd", 1200 },   // crosses the km boundary
+  // DEPART, not CONTINUE. The first step of a real route is "head toward X",
+  // and Maps draws the same icon for both - which is what put a confident
+  // straight arrow on the panel against a banner showing a turn. The demo
+  // starts the way a route actually starts.
+  { MV_DEPART,       "Panampilly Nagar Rd", 1200 },   // crosses the km boundary
   { MV_TURN_RIGHT,   "Moulana Azad Rd",      620 },
   { MV_FORK_RIGHT,   "Thevara Ferry Rd",     380 },
   { MV_EXIT_LEFT,    "Kochi-Fort Rd",        300 },
@@ -132,6 +136,7 @@ uint16_t rideDist = 0;      // metres to the next maneuver
 uint8_t  rideLeg  = 0;
 uint32_t arriveAt  = 0;     // millis() when the arrival screen started
 bool     juncBuilt = false; // geometry is rebuilt on step change, not per tick
+int8_t   nightOverride = -1;  // -1 leave alone, 0 force day, 1 force night
 
 // Metres left on the whole route, for the footer. Recomputed rather than
 // cached, for the same reason the real parser recomputes it: NAV_DATA.md
@@ -263,6 +268,20 @@ void baseline(NavState& s) {
   s.arrivedAtMs  = 0;
 
   /*
+    Night, only if somebody asked for it.
+
+    baseline() must NOT force night off - doing that destroyed night mode
+    permanently on the road, because night has one writer and CONFIG arrives
+    only on connect and on a polarity change. But ui_mock has no phone at all,
+    so without an override the night palette is untestable there: the inverted
+    set, the amber turn-now bars, the warm text.
+
+    -1 leaves NavState alone, which is the real firmware behaviour and the
+    default. The n key sets it.
+  */
+  if (nightOverride >= 0) s.night = (nightOverride != 0);
+
+  /*
     s.night is deliberately NOT touched.
 
     It used to be forced false here, and that was the one faked field with no
@@ -311,6 +330,7 @@ void demoForce(char what) {
     case 'r': start(M_RIDE,   "scripted ride"); break;
     case 'a': start(M_ALERTS, "alerts"); break;
     case 'j': start(M_JUNC,   "junctions"); break;
+    case 'f': start(M_FLOW,   "full flow"); break;
     default: break;
   }
 }
@@ -325,6 +345,12 @@ bool demoSerial() {
     case 'r': start(M_RIDE,   "scripted ride");                             return true;
     case 'a': start(M_ALERTS, "alerts - call and message, riding and parked"); return true;
     case 'j': start(M_JUNC,   "junctions - flyover, fork, roundabout");        return true;
+    case 'f': start(M_FLOW,   "FULL FLOW - every screen, in ride order");      return true;
+    case 'n':
+      nightOverride = (nightOverride == 1) ? 0 : 1;
+      displayInvalidate();
+      Serial.printf("demo: night %s\n", nightOverride ? "ON" : "OFF");
+      return true;
     case 'b': displayBootBegin(); displayBootStage(2); displayBootFinish(true);
               displayInvalidate();
               Serial.println("demo: boot replayed"); return true;
@@ -460,6 +486,141 @@ void demoTick(NavState& s) {
           claiming to be new.
         */
         s.notifyAtMs = stepAtMs;
+      }
+      break;
+    }
+
+    case M_FLOW: {
+      /*
+        The whole product, once through, in the order a ride actually happens.
+
+        Every other mode shows one thing well. This one exists to answer a
+        different question - does the sequence hold together - and to reach the
+        four screens no other mode ever draws: REROUTING, STALE, DISCONNECTED,
+        and a real arrival with its 30 s dwell.
+
+        Each phase narrates itself on the serial line, so what is on the panel
+        and why is never a guess.
+      */
+      static const struct { uint32_t ms; const char* say; } PHASE[] = {
+        { 4000,  "1/9  parked - clock, PARKED, the road and the resting dot"   },
+        { 5000,  "2/9  parked message - takes the whole screen, self-clears"   },
+        { 5000,  "3/9  DEPART - head toward, NOT a straight-through arrow"     },
+        { 0,     "4/9  riding - bands, alert at 700 m, junction at 300 m"      },
+        { 3500,  "5/9  REROUTING - arrow suppressed, the old turn is not true" },
+        { 3500,  "6/9  STALE - link up, data stopped"                          },
+        { 3500,  "7/9  DISCONNECTED - the link itself is gone"                 },
+        { 14000, "8/9  ARRIVED - watch it hold; it repaints itself every 10 s" },
+        { 2500,  "9/9  back to parked"                                         },
+      };
+      const uint8_t PHASE_N = sizeof(PHASE) / sizeof(PHASE[0]);
+
+      if (step >= PHASE_N) step = 0;
+
+      // Phase 3 is the ride and ends on arrival, not on a timer.
+      const bool timed = (PHASE[step].ms != 0);
+      if (timed && now - stepAtMs >= PHASE[step].ms) {
+        step = (step + 1) % PHASE_N;
+        stepAtMs = now;
+        rideLeg = 0; rideDist = RIDE_LEGS[0].len; arriveAt = 0;
+        geomClear();
+        displayInvalidate();
+        Serial.printf("flow: %s\n", PHASE[step].say);
+      }
+
+      clearAlerts(s);
+      s.flags = 0;
+
+      switch (step) {
+        case 0: case 8:                       // parked
+          break;
+
+        case 1:                               // parked, message
+          s.notifyKind = NOTIFY_MESSAGE;
+          snprintf(s.notifySrc,  ALERT_SRC_MAX,  "%s", "Appa");
+          snprintf(s.notifyText, ALERT_TEXT_MAX, "%s", "Reached home safely? Call me");
+          s.notifyAtMs = stepAtMs;            // arrival time, not now - see M_ALERTS
+          break;
+
+        case 2:                               // departing
+          s.flags    = NAV_ACTIVE;
+          s.maneuver = MV_DEPART;
+          s.dist_m   = 600;
+          s.eta_min  = 9;
+          s.remaining_100m = 30;
+          snprintf(s.instruction, INSTRUCTION_MAX, "%s", "Panampilly Nagar Rd");
+          break;
+
+        case 3: {                             // the ride
+          if (arriveAt) {                     // reached the end - move on
+            step = 4; stepAtMs = now; geomClear(); displayInvalidate();
+            Serial.printf("flow: %s\n", PHASE[4].say);
+            break;
+          }
+          if (now - stepAtMs >= RIDE_TICK_MS) {
+            stepAtMs = now;
+            const uint16_t v = (rideDist <= 100) ? SPEED_TURN : SPEED_CRUISE;
+            rideDist = (rideDist > v) ? (uint16_t)(rideDist - v) : 0;
+            if (rideDist == 0) {
+              if (rideLeg + 1 >= RIDE_N) { arriveAt = now; break; }
+              rideLeg++; rideDist = RIDE_LEGS[rideLeg].len;
+            }
+          }
+          const Leg& leg = RIDE_LEGS[rideLeg];
+          const uint32_t left = routeRemaining();
+          const uint16_t q = (rideDist > 500) ? 100 : (rideDist > 100) ? 50 : 10;
+
+          s.flags    = NAV_ACTIVE;
+          s.maneuver = leg.mv;
+          s.dist_m   = (uint16_t)((rideDist / q) * q);
+          s.eta_min  = (uint16_t)((left / 8 + 30) / 60);
+          s.remaining_100m = (uint16_t)(left / 100);
+          snprintf(s.instruction, INSTRUCTION_MAX, "%s", leg.road);
+
+          // A message while riding, once, in the far band - where it gets a
+          // strip rather than the screen, and where it is allowed at all.
+          if (rideLeg == 0 && s.dist_m <= 700 && s.dist_m > 500) {
+            s.notifyKind = NOTIFY_MESSAGE;
+            snprintf(s.notifySrc,  ALERT_SRC_MAX,  "%s", "Amma");
+            snprintf(s.notifyText, ALERT_TEXT_MAX, "%s", "Where are you?");
+            s.notifyAtMs = now - 1000;        // steady inside its dwell
+          }
+
+          // Junction geometry on the approach to the first real turn.
+          if (rideLeg == 1 && s.dist_m <= 400 && s.dist_m >= 150) {
+            if (!juncBuilt) { juncFlyover(); juncBuilt = true; }
+          } else if (juncBuilt) {
+            geomClear(); juncBuilt = false;
+          }
+          break;
+        }
+
+        case 4:                               // rerouting
+          s.flags    = NAV_ACTIVE | NAV_REROUTING;
+          s.maneuver = MV_TURN_RIGHT;
+          s.dist_m   = 240;
+          snprintf(s.instruction, INSTRUCTION_MAX, "%s", "Moulana Azad Rd");
+          break;
+
+        case 5:                               // stale - link up, data stopped
+          s.flags       = NAV_ACTIVE;
+          s.maneuver    = MV_TURN_RIGHT;
+          s.dist_m      = 240;
+          s.stale       = true;
+          break;
+
+        case 6:                               // disconnected
+          s.linkUp = false;
+          break;
+
+        case 7:                               // arrived
+          s.flags       = NAV_ACTIVE | NAV_ARRIVED;
+          s.showArrival = true;
+          s.arrivedAtMs = stepAtMs;
+          s.maneuver    = MV_DESTINATION;
+          s.dist_m      = 0;
+          snprintf(s.instruction, INSTRUCTION_MAX, "%s", "Fort Kochi Beach");
+          break;
       }
       break;
     }

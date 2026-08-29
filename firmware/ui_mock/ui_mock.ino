@@ -12,7 +12,9 @@
   eventually showing arrows the firmware had stopped drawing.
 
   Serial, 115200:
-    r   the scripted ride (this is where it starts)
+    f   the FULL FLOW - every screen in ride order (this is where it starts)
+    n   toggle night mode - there is no phone here to send it
+    r   the scripted ride
     g   glyph parade - every maneuver, named as it draws
     a   alerts - call and message, riding and parked
     b   replay the boot sequence
@@ -51,7 +53,8 @@ void setup() {
   displayBootStage(2);
   displayBootFinish(false);
 
-  demoForce('r');
+  // Straight into the full flow: every screen, in the order a ride happens.
+  demoForce('f');
 }
 
 void loop() {

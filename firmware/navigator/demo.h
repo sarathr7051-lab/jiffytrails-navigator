@@ -13,6 +13,8 @@
   real renderer. It cannot drift, because there is nothing to drift from.
 
   Serial, 115200:
+    f   FULL FLOW - every screen, in the order a ride happens
+    n   toggle night mode (ui_mock has no phone to send it)
     j   junction geometry - flyover, fork, roundabout
     g   glyph parade - every maneuver in glyph_data.h, named as it draws
     r   scripted ride - the distance bands, then arrival
