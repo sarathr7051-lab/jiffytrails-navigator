@@ -14,6 +14,126 @@ Research compiled 29 Aug 2026 so the enclosure can be designed without callipers
 
 ---
 
+## ★★ STOP — THE BOARD IN HAND IS PROBABLY NOT THE MSP2806
+
+Added 29 Aug 2026. **Nothing in section 1 may be used to commit a print until
+the photographs in section 5 have been taken.**
+
+Almost every display dimension in this document was read off the LCDWIKI
+MSP2806 drawing. That was the right source to find, and the numbers in it are
+sound. But the vendor's own photograph of the SmartElex board actually
+purchased (PCB marking `4484516A_Y7475_241108`) shows **a different PCB**:
+
+| | LCDWIKI MSP2806 | The board in the photograph |
+|---|---|---|
+| Panel FPC | bonded at the header end | **ZIF connector mid-board, tail folded through a slot cut in the PCB** |
+| Card socket | mid-board, straddling 32–61 mm | **far end, near a corner** |
+| SD header | centred on the far edge | **at a corner** |
+
+The consequence that matters is §1.4. The active area's **4.90 mm offset toward
+the far end is not a styling choice — on the MSP2806 it is forced**, because the
+FPC is bonded along the header edge and the glass physically cannot sit there.
+Put the FPC on a ZIF connector fed through a slot instead and that constraint
+disappears: the panel is free to sit anywhere along the 86 mm axis.
+
+The offset may still be 4.90 mm. There is no longer any evidence that it is.
+
+**So §5.1's lit-white-screen photograph is no longer a confirmation step. It is
+the only source.** The lid aperture is the least forgiving feature on the case —
+it is cut to the active area with no tolerance, and getting it wrong crops live
+picture on one side while showing bare PCB on the other. That is precisely the
+failure the 4.90 mm figure was found to prevent, and it returns in full if the
+number is carried over from the wrong board.
+
+The listing also mixes at least two revisions across its three photos — one with
+bare header holes, one with a 14-pin header fitted. It cannot be trusted for
+population either. **Trust the board on the desk, not the drawing.**
+
+---
+
+## ★ MEASURED ON THE ACTUAL HARDWARE — 29 Aug 2026
+
+Rider measurements with a steel rule. These **supersede every drawing figure
+they contradict**, and the case is now built from them.
+
+| What | Measured | Drawing said | Status |
+|---|---|---|---|
+| Display PCB length | **82.0 mm** | 86.00 | ★ **4 mm shorter.** Cross-checked independently: the white panel frame is 70 mm, centred, with 6 mm of board at each end — 70 + 6 + 6 = 82 |
+| Display PCB width | **50.0 mm** | 50.00 | agrees |
+| White panel frame | **70 × 50 mm, centred** | glass 69.20, *not* centred | ★ On this board the frame **is** centred along the length. On the MSP2806 it is not. |
+| Frame proud of the PCB edge | **0.35 mm** per side | not documented | Module is 50.7 mm at its widest. Nothing in any datasheet mentions this lip, and a 50.6 mm locating pocket would have jammed on it. |
+| Module thickness, glass face → PCB back | **5.0 mm** | 4.40 | Taking the measured, larger value |
+| Header pin projection past the PCB back | **10.0 mm** | 8.38 | |
+| SD socket above the PCB back face | **3.0 mm** | ≤2.20 (micro-SD board) | Full-size socket, so taller |
+| **Folded ribbon loop above the PCB back** | **4.0 mm** | feature does not exist on the MSP2806 | ★ **The tallest thing on the back.** This is the obstruction the audit could not characterise. |
+| ESP32 length | **50.0 mm** | 58 (vendor listing) | see below |
+| ESP32 width | **25.0 mm** | 25 | agrees |
+| JST connector height | **6.0 mm** | ~6 inferred | confirmed |
+
+### The active-area offset — measured at last
+
+Screen lit white, two independent readings:
+
+```
+D (header end) = 14 mm, C (far end) = 7 mm  ->  span 61.0, offset 3.5
+D (header end) = 15 mm, C (far end) = 8 mm  ->  span 59.0, offset 3.5
+```
+
+Both spans exceed the 57.6 mm the panel can physically produce (320 px ×
+0.18 mm), by 1.70 and 0.70 mm respectively — and **the excess is equal at both
+ends in each case.** That is backlight glow spilling past the pixel edge, which
+inflates the span and leaves the difference untouched. So the offset is taken
+from the difference, which the glow cannot corrupt:
+
+> **`disp_active_off = 3.5 mm` toward the far end.** Not 0, not the inherited
+> 4.90. Two readings of different edges agreeing on 3.5 is the confirmation.
+
+### The handlebar ball — 17 mm, VERIFIED from the manufacturer
+
+**VERIFIED** 29 Aug 2026 from BOBO's own product listings, by two independent
+routes:
+
+1. BOBO's **[Metal Buckle Handlebar Attachment][bobobuckle]** (SKU BB-BM-502) is
+   sold in a **17 mm** ball version whose stated compatibility list names the
+   **BM4** explicitly, alongside the BM1/2/3/5/6/10/11/12/14/20/21/24 series.
+2. BOBO's stem mounts split the same way — **SM1 carries a 25 mm ball, SM2
+   a 17 mm ball**, and the BM4 pairs with the SM2.
+
+So the ball on the bike is **Ø17.0 mm**, and this is now a sourced figure
+rather than the "near-universal motorcycle standard" it was being taken on.
+
+★ **One caveat that keeps it worth a glance.** BOBO sells the same buckle in
+**15, 17 and 25 mm**. The 17 is what ships with a BM4, but if the handlebar
+attachment was ever bought separately or swapped, it could be another size.
+Thirty seconds of confirmation, no callipers:
+
+```
+paper strip round the ball's widest point, mark the overlap, flatten, measure:
+    47.1 mm  ->  15 mm ball
+    53.4 mm  ->  17 mm ball   <- expected
+    78.5 mm  ->  25 mm ball
+```
+
+Circumference multiplies the error by pi, which is exactly why this beats
+trying to measure a sphere's diameter with a rule. A 15 and a 17 are 6.3 mm
+apart on the strip — unmissable.
+
+[bobobuckle]: https://www.bobogears.com/product/bobo-metal-buckle-handlebar-attachment/
+
+### ★ The ESP32 is probably a LOLIN32 **Lite**, not a LOLIN32
+
+50 × 25 mm matches the published **LOLIN32 Lite** outline (~50.4 × 25.5) rather
+than the full LOLIN32 (~58 × 26) the vendor listing describes. Both carry a JST
+battery connector, so that is not a discriminator.
+
+This does not affect the enclosure — the display is the larger part and
+`mcu_l` is referenced by no geometry — but **it matters for the perfboard
+layout and for the pin map**, because the Lite breaks out fewer pins in a
+different order. The working pin map in `User_Setup.h` is bench-proven and
+remains the authority; do not "correct" it against a LOLIN32 pinout diagram.
+
+---
+
 ## 1. SmartElex 2.8" TFT (ILI9341, SPI, 240×320, non-touch)
 
 ### 1.1 Source and SKU
@@ -280,7 +400,24 @@ The arithmetic closes, which is a good sign the drawing is self-consistent:
 | Keep-out / pad diameter | **Ø4.70 mm** ("4-4.70") |
 | Hole centre grid | **44.00 × 76.08 mm** |
 | Inset from each long (50 mm) edge | **3.00 mm** — verified, `44.00 + 3.00 + 3.00 = 50.00` ✓ |
-| Inset from each short (86 mm) edge | **4.96 mm** — INFERRED as `(86.00 − 76.08) / 2`; the drawing labels the span but not the end insets, so this assumes symmetry along the length |
+| Inset from the **far** (non-header) edge | **3.00 mm** — VERIFIED |
+| Inset from the **header** edge | **6.92 mm** — VERIFIED; `3.00 + 76.08 + 6.92 = 86.00` ✓ |
+
+★ **CORRECTED 29 Aug 2026.** This row previously read "4.96 mm from each short
+edge — INFERRED as `(86.00 − 76.08) / 2`, assuming symmetry". The drawing does
+label it, and **the holes are not symmetric**: they sit 1.96 mm toward the far
+end. Confirmed twice over — the explicit `3.00` callout sits in the same nested
+dimension chain as the `6.40` glass and `9.30` active-area offsets, and the
+extracted hole-circle centres land in the same place.
+
+Standoffs laid out on the old symmetric 4.96/4.96 pattern would miss by 1.96 mm
+at **both** ends. Ø3.20 holes on M3 screws give about 0.1 mm of slop, so that
+is not a tight fit — it is a scrapped print.
+
+This is the same error, from the same cause, as the original `disp_active_off =
+0.0`: assuming symmetry on a board that is asymmetric by design. The glass is
+off-centre, the mounting holes are off-centre, and the reason is the same — the
+driver chip eats one end.
 
 Four Ø3.20 holes on a 44.00 × 76.08 grid are a proper mounting scheme for M3 —
 better than trapping the board between bosses and hoping the lid holds it. The

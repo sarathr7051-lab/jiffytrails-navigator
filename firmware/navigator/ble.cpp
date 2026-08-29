@@ -17,6 +17,7 @@
 #include <NimBLEDevice.h>
 
 #include "ble.h"
+#include "backlight.h"
 #include "nav_types.h"
 #include "watchdog.h"
 
@@ -168,10 +169,19 @@ static bool handleNav(PacketReader& r, NavState& s) {
   s.dist_m         = dist_m;
   s.next_maneuver  = next_maneuver;
   s.next_dist_m    = next_dist_m;
-  s.eta_min        = eta_min;
-  s.remaining_100m = remaining_100m;
+  /*
+    ★ CLAMPED. Both are uint16_t straight off the wire and both are laid out
+    into fixed-width footer cells. At eta_min = 65535 the left cell runs to
+    x=182 while the right cell's origin computes to 111, so the two collide and
+    overprint. Real values never get near this; a corrupted packet does, and
+    everything else in this file already assumes one can arrive - phoneBattery
+    is clamped three handlers down for exactly this reason.
+  */
+  s.eta_min        = (eta_min > 999) ? 999 : eta_min;
+  s.remaining_100m = (remaining_100m > 9999) ? 9999 : remaining_100m;
   s.flags          = flags;
   memcpy(s.instruction, instruction, sizeof(s.instruction));
+  s.lastNavMs      = millis();   // ★ NAV freshness, distinct from link liveness
   return true;
 }
 
@@ -262,7 +272,9 @@ static bool handleConfig(PacketReader& r, NavState& s) {
   const uint8_t brightness = r.u8();
   const uint8_t units      = r.u8();
   if (!r.ok()) return false;
-  (void)brightness;   // no PWM on the backlight yet - needs a MOSFET
+  // 0 means "follow the LDR", which is what the phone sends today. A nonzero
+  // value pins the panel and is not remembered across a reboot - see backlight.h.
+  backlightSetOverride(brightness);
   (void)units;        // metric only for now
 
   if (r.remaining() >= 1) {

@@ -28,6 +28,21 @@ void watchdogTick(NavState& s) {
   if (s.linkUp && !wasUp) {
     s.lastPacketMs = millis();
     s.stale = false;
+    /*
+      ★ AND WIPE THE NAV CONTENT. Restarting the clock without clearing what it
+      vouches for was the other half of the same defect: the flags, maneuver,
+      distance and road name all survived a disconnect, so a reconnect hours
+      later re-validated yesterday's turn and rendered it as live.
+
+      A reconnect now lands on IDLE and stays there until real NAV arrives.
+    */
+    s.flags        = 0;
+    s.maneuver     = MV_UNKNOWN;
+    s.dist_m       = 0;
+    s.next_maneuver = MV_UNKNOWN;
+    s.next_dist_m  = 0;
+    s.instruction[0] = 0;
+    s.lastNavMs    = millis();
   }
 
   // While the link is down, DISCONNECTED outranks STALE anyway (see
@@ -38,7 +53,17 @@ void watchdogTick(NavState& s) {
     return;
   }
 
-  s.stale = (millis() - s.lastPacketMs) > STALE_MS;
+  /*
+    ★ TWO CLOCKS, EITHER ONE CAN GO STALE.
+
+    lastPacketMs says the link is alive. lastNavMs says the maneuver is. The
+    nav screens must gate on BOTH, because the phone sends STATUS every 30 s
+    regardless of whether Maps is still producing anything - so the link clock
+    alone would report "fresh" over a maneuver that died half an hour ago.
+  */
+  const uint32_t now = millis();
+  s.stale = (now - s.lastPacketMs) > STALE_MS
+         || (s.navActive() && (now - s.lastNavMs) > STALE_MS);
 
   // Arrival latch. Maps drops its notification about 4.7 s after you arrive,
   // which clears nav_active — so without latching, the arrival screen would

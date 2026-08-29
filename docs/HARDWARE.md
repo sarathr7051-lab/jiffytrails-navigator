@@ -59,16 +59,50 @@ brightness, which blocks two things already in the plan:
 `User_Setup.h` already reserves `TFT_BL 17` and `TFT_BACKLIGHT_ON HIGH`,
 commented out, for when this changes.
 
-**Do not simply move the LED wire to GPIO 17.** A 2.8" ILI9341 backlight draws
-roughly 60–100 mA. An ESP32 pin is rated 40 mA absolute maximum and ~12 mA for
-comfort, so driving it directly would be somewhere between unreliable and
-destructive. It needs a low-side switch: an N-channel logic-level MOSFET
-(2N7002 for the low end of that current, AO3400 with margin) or an NPN such as
-BC337, with the GPIO into the gate/base and the backlight cathode into the
-drain/collector.
+**★ CORRECTED 29 Aug 2026 — no external switch is needed. The module already
+has one.**
 
-Cost is a few rupees. **Decide this before soldering to perfboard in Stage 11**
-— retrofitting it into a sealed enclosure is the bad version of this job.
+This section used to say the LED pin was the backlight supply, that it drew
+60–100 mA, and that it therefore needed an added MOSFET or an NPN. The
+[LCDWIKI MSP2807 schematic][msp2807sch] says otherwise, traced net by net:
+
+```
+3.3V ──> LEDA ─[4 white LEDs in parallel]─ LEDK ──[R5 10R]──┐
+                                                  collector ┴
+  header "LED" ──[R6 1k]── base ────────────────►  Q1  S8050 (NPN)
+                                                    emitter ┬
+                                                           GND
+```
+
+The LED pin is **a logic-level control input to an on-board low-side NPN**, not
+a supply rail. That is why the wiki describes it as "high level lighting". The
+current an ESP32 pin actually sources into it is base current:
+
+```
+(3.3 - 0.7) / 1000 = 2.6 mA
+```
+
+against a 40 mA absolute maximum. **Wire GPIO 17 straight to the LED pin and
+PWM it.** No transistor, no gate resistor, no pulldown. `backlight.cpp` needs
+no change — it was already only ever driving a pin.
+
+The 60–100 mA figure was right about the *panel* (QD-TFT2803: Vf 3.2 V, If
+60 mA nominal, 80 mA max) and wrong about this *module*, which runs those LEDs
+off 3.3 V through a 10 Ω series resistor — so somewhere near 15–40 mA. Worth
+knowing for the sunlight problem: **this backlight is already running well
+under its rated current.**
+
+★ **Confirm it in ten seconds before soldering, because this family of boards
+is not consistent** — some genuinely do bring the LED supply straight out, and
+Adafruit's own 2.8" breakout has a transistor while other sellers' do not. Put
+a **1 kΩ resistor in series** between 3.3 V and the LED pin:
+
+- backlight stays at **full brightness** → there is a transistor, drive it from
+  the GPIO as above
+- backlight goes **almost dark** → the pin is the LED supply after all, and the
+  old advice applies: fit a 2N7000 low-side switch
+
+[msp2807sch]: https://www.lcdwiki.com/res/MSP2807/MSP2807-2.8-SPI.pdf
 
 **The `+` beside the white connector is the LiPo JST terminal**, not a 5 V
 header pin. `VP` and `VN` are GPIO 36 and 39, analog inputs — not power.
@@ -316,6 +350,24 @@ Roughly 94 × 58 × 20 mm, landscape.
 - **Sunshade hood, 25–35 mm, matte black, ribbed inside.** Not cosmetic. Per the
   arithmetic above this is the largest single readability gain available, worth
   more than any backlight change.
+- **MOUNTING ANGLE IS THE SECOND-LARGEST GAIN, AND IT IS FREE.** Rider test,
+  29 Aug 2026, in real daylight: *"keep it straight up, I'm not able to see
+  clearly, but if I adjust the angle I'm able to see it properly."*
+
+  That is the reflection term of the ACR equation, not a preference. A screen
+  lying face-up reflects a 100,000 lux sky straight back at the rider, which is
+  exactly where the 1430 nits of grey haze above comes from. Tilt it toward the
+  rider and it reflects the tank, the road and his own jacket instead — all of
+  them orders of magnitude darker. The emitted 250 nits never changes; the
+  denominator collapses.
+
+  Two consequences for the build:
+    - The ball joint is not a convenience. It is the adjustment that makes this
+      panel usable in sun, and any mount that gives it up is the wrong mount.
+      The quarter turn sets only which way is up — never the angle.
+    - `hood_rake` assumes a near-vertical screen. Once the rider settles on an
+      angle, it wants setting to match, or the hood shades the wrong part of
+      the sky.
 - **Cable gland on the bottom face**, with a drip loop below.
 - **ePTFE pressure vent, Ø3 mm.** The part most DIY builds omit. A sealed box in
   the sun reaches 60 °C+; cold rain contracts the air and pulls water past the
@@ -323,7 +375,15 @@ Roughly 94 × 58 × 20 mm, landscape.
 - Blind screw bosses so fasteners never breach the sealed volume.
 
 Print settings: 0.2 mm layers, **4 perimeters** (the lugs carry all the load),
-30–40 % infill, sealing face flat on the bed.
+30–40 % infill.
+
+**Orientation: body mount-face down; lid sealing-face down, hood up.** This
+line previously said "sealing face flat on the bed", which is backwards for the
+body and loses the print — that orientation gives a 282 mm picture-frame first
+layer of only ~338 mm² on a part that shrinks 0.5 %, and asks the tub floor to
+bridge 52 × 88 mm of open air. Mount-face down gives a full 57 × 93 mm first
+layer and prints the sealing rim as the top face, where it comes out accurate
+and free of elephant's foot.
 
 Drawings in `hardware/mount-design.html`.
 

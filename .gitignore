@@ -6,3 +6,6 @@ android/navlink/.gradle/
 android/navlink/local.properties
 build/
 firmware/navigator/wifi_secrets.h
+
+# Generated renders - regenerate with openscad, do not commit
+hardware/renders/

@@ -31,6 +31,7 @@
 #include "src/nav_types.h"
 #include "src/display.h"
 #include "src/demo.h"
+#include "src/backlight.h"
 
 // The one instance, exactly as the navigator has it. The demo writes it and
 // the display reads it; nothing here decides anything in between.
@@ -43,6 +44,7 @@ void setup() {
   Serial.println(F("keys: r ride   g glyphs   a alerts   b boot   x freeze"));
 
   displayBegin();
+  backlightBegin();   // panel is alive, so it is safe to light it
 
   // The same boot sequence the real firmware plays, minus the wait for a
   // phone. The waypoint finishes hollow rather than amber, because there is no
@@ -58,9 +60,14 @@ void setup() {
 }
 
 void loop() {
-  demoSerial();
+  backlightTick();
+  demoSerial(state);
   demoTick(state);
   displaySetNight(state.night);
+  // n now dims as well as inverts, exactly as it does on the device - so the
+  // mock shows the real night appearance rather than an inverted-but-blazing
+  // approximation of it.
+  backlightSetNight(state.night);
   displayTick();          // no-op unless MISO is wired; see displayBegin's probe
   displayRender(state);
 }

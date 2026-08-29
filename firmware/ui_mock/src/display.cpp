@@ -1172,9 +1172,21 @@ void displayRender(const NavState& s) {
   // every time a suppressed arrow changed underneath it.
   bool changed = !chromeValid || scr != lastScreen;
   if (navScreen && !changed) {
+    /*
+      ★ Only key on the road name where the road name is actually DRAWN.
+
+      drawChrome renders it on FAR and APPROACH only - COMMITTED and NOW
+      deliberately do not, because those screens exist so that nothing appears
+      or changes at the moment of the turn. Keying on it regardless meant an
+      instruction-only change under 100 m triggered a full fillScreen and a
+      184 px glyph redraw: a whole-panel flash at the junction, carrying no new
+      information, on the one screen whose entire design goal is stillness.
+    */
+    const bool drawsText = (scr == UI_NAV_FAR || scr == UI_NAV_APPROACH);
     changed = (s.maneuver != lastManeuver)
            || (s.gpsWeak() != lastGpsWeak)
-           || (strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
+           || (drawsText &&
+               strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
   }
 
   // The idle screen has no distance field, so nothing else would ever repaint
@@ -1184,7 +1196,14 @@ void displayRender(const NavState& s) {
   if (scr == UI_IDLE && !changed) {
     const uint16_t clockKey =
         (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
-    changed = (clockKey != lastClockKey) || (s.phoneBatteryPct != lastBattery);
+    /*
+      ★ Key on the RENDERED value, not the raw one. drawIdle shows the battery
+      only at 20% or below, so 83 -> 82 -> 81 repainted the whole parked screen
+      - a full white flash every few minutes for a number that is not on it.
+    */
+    const uint8_t battKey =
+        (s.phoneBatteryPct && s.phoneBatteryPct <= 20) ? s.phoneBatteryPct : 0;
+    changed = (clockKey != lastClockKey) || (battKey != lastBattery);
   }
 
   /*
@@ -1259,7 +1278,10 @@ void displayRender(const NavState& s) {
     chromeValid  = true;
     lastDist     = -1;               // chrome repaint wiped the number
     lastClockKey = (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
-    lastBattery  = s.phoneBatteryPct;
+    // Store the same key the comparison uses, or the two disagree forever and
+    // the screen repaints on every tick instead of never.
+    lastBattery  = (s.phoneBatteryPct && s.phoneBatteryPct <= 20)
+                 ? s.phoneBatteryPct : 0;
     lastFooter   = 0xFFFFFFFFu;
   }
 

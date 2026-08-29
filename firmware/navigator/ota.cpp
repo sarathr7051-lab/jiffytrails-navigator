@@ -108,6 +108,22 @@ void otaTick(bool navActive) {
     a convenience feature.
   */
   if (navActive) {
+    /*
+      ★ ABORT AN UPDATE IN PROGRESS, do not just cut the radio underneath it.
+
+      This used to only call radioOff(). If a route started mid-transfer, the
+      radio went away, ArduinoOTA.handle() was never called again, so onError
+      never fired and `busy` was never cleared - and navigator.ino returns from
+      loop() on every iteration while otaBusy(). The panel froze on "UPDATING,
+      do not disconnect" until a power cycle. Not a bricking risk, since the
+      boot partition is not switched until Update.end(), but a dead display.
+    */
+    if (busy) {
+      Update.abort();
+      busy = false;
+      displayInvalidate();
+      Serial.println(F("ota: update aborted - route started"));
+    }
     if (state != OFF) radioOff("route started");
     return;
   }

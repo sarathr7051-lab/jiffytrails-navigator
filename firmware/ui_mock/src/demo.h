@@ -45,7 +45,13 @@ bool demoActive();
 void demoForce(char what);
 
 // Reads Serial. Returns true if this byte started or stopped a demo.
-bool demoSerial();
+/*
+  Takes NavState because stopping a demo has to UNDO what the demo wrote.
+  It used to take nothing, so pressing x cleared the mode but left the
+  fabricated maneuver, the forced night flag and the alert bands sitting in
+  NavState - see the comment on case 'x' in demo.cpp.
+*/
+bool demoSerial(NavState& s);
 
 // Writes the next frame of synthetic state. Call instead of watchdogTick().
 void demoTick(NavState& s);

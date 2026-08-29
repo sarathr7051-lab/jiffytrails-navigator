@@ -337,7 +337,7 @@ void demoForce(char what) {
 
 bool demoActive() { return mode != M_OFF; }
 
-bool demoSerial() {
+bool demoSerial(NavState& s) {
   if (!Serial.available()) return false;
   const int c = Serial.read();
   switch (c) {
@@ -367,7 +367,37 @@ bool demoSerial() {
       Invisible on the bench, because with no phone UI_DISCONNECTED outranks it
       and hides the symptom. That is what makes it a road bug.
     */
-    case 'x': mode = M_OFF; geomClear(); displayInvalidate();
+    /*
+      ★ AND UNDO WHAT THE DEMO WROTE. Clearing `mode` was never enough.
+
+      demoTick has been writing fabricated NAV into the shared NavState, and
+      baseline() has been setting linkUp = true, stale = false and stamping
+      lastPacketMs. So after x, with a phone connected, the invented "Fort
+      Kochi Beach" maneuver kept rendering as a live instruction - and
+      indefinitely, because STATUS packets kept the freshness clock alive.
+
+      nightOverride was the worse half: handleConfig is its only other writer
+      and CONFIG arrives on connect and on a solar transition only, so pressing
+      n then x left the panel inverted until the next sunrise. That is exactly
+      the failure the comment above spends two paragraphs saying must never
+      happen, reintroduced through the override.
+    */
+    case 'x': mode = M_OFF;
+              nightOverride = -1;
+              s.flags         = 0;
+              s.maneuver      = MV_UNKNOWN;
+              s.next_maneuver = MV_UNKNOWN;
+              s.dist_m        = 0;
+              s.next_dist_m   = 0;
+              s.instruction[0] = 0;
+              s.callState     = 0;
+              s.notifyText[0] = 0;
+              s.notifySrc[0]  = 0;
+              // Hand the watchdog the truth immediately rather than letting it
+              // vouch for a demo's timestamps for another ten seconds.
+              s.lastPacketMs  = millis() - STALE_MS - 1;
+              s.lastNavMs     = millis() - STALE_MS - 1;
+              geomClear(); displayInvalidate();
               Serial.println("demo: off - display handed back to the phone");
               return true;
     default:  return false;

@@ -144,7 +144,20 @@ struct NavState {
   // --- link health, owned by the watchdog ---
   bool     linkUp       = false;   // BLE connected
   bool     stale        = false;   // no arrival within STALE_MS
-  uint32_t lastPacketMs = 0;       // millis() of the last arrival, any type
+  uint32_t lastPacketMs = 0;       // millis() of the last arrival, ANY type
+  /*
+    ★ Separate clock for NAV specifically. lastPacketMs measures whether the
+    LINK is alive; this measures whether the MANEUVER is. They are not the same
+    thing and conflating them was a real defect:
+
+    STATUS arrives every 30 s, plus CALL, NOTIFY and CONFIG whenever the phone
+    feels like it, and every one of them used to clear s.stale. So the nav
+    screens - which gate on s.stale alone - would keep drawing a full-size
+    arrow and a distance long after Maps had stopped producing either. A rider
+    whose notification listener was unbound mid-ride would be shown the last
+    turn, confidently, for the rest of the ride.
+  */
+  uint32_t lastNavMs    = 0;       // millis() of the last NAV packet only
   uint32_t packetCount  = 0;       // arrivals, not changes
 
   // --- arrival latch, owned by the watchdog ---

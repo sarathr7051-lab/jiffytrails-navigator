@@ -38,6 +38,7 @@ my @FILES = qw(
     display.h  display.cpp
     maneuvers.h maneuvers.cpp
     demo.h     demo.cpp
+    backlight.h backlight.cpp
 );
 
 my $BANNER = <<'END';

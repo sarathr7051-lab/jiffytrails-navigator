@@ -24,6 +24,7 @@
 #include "display.h"
 #include "watchdog.h"
 #include "demo.h"
+#include "backlight.h"
 // WiFi and ArduinoOTA are included HERE, not only in ota.cpp, because the
 // Arduino builder resolves library dependencies from the sketch file. An
 // include that appears solely in a .cpp is not discovered, and the build fails
@@ -71,6 +72,7 @@ void setup() {
   Serial.printf("boot: reset reason %d\n", (int)esp_reset_reason());
 
   displayBegin();
+  backlightBegin();   // panel is alive, so it is safe to light it
 
   displayBootBegin();
   displayBootStage(1);            // panel is up - the ring can honestly say so
@@ -106,13 +108,19 @@ void loop() {
 
   // A demo owns NavState while it runs. The watchdog must not also run: it
   // would see no packets arriving and paint STALE over the demo.
-  otaTick(state.navActive());
+  // Gated on a LIVE route, not merely on a NAV_ACTIVE flag. If the link drops
+  // mid-route without a final nav_active=0, the flag sticks - and OTA would be
+  // locked out exactly when the device is parked, which is the only time it is
+  // allowed up and the only way back in once the case is sealed.
+  otaTick(state.linkUp && !state.stale && state.navActive());
   if (otaBusy()) return;          // the update owns the screen
 
-  demoSerial();
+  backlightTick();        // ambient light -> backlight PWM
+  demoSerial(state);
   if (demoActive()) demoTick(state);
   else              watchdogTick(state);   // link state and freshness
   displaySetNight(state.night);
+  backlightSetNight(state.night);
   displayTick();          // re-inits the panel if it has lost its config
   nudgeIfQuiet();
   displayRender(state);   // renders whatever state now says, and nothing else
