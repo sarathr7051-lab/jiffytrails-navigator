@@ -24,6 +24,14 @@
 #include "display.h"
 #include "watchdog.h"
 #include "demo.h"
+// WiFi and ArduinoOTA are included HERE, not only in ota.cpp, because the
+// Arduino builder resolves library dependencies from the sketch file. An
+// include that appears solely in a .cpp is not discovered, and the build fails
+// with "ArduinoOTA.h: No such file or directory" while the library sits in the
+// core the whole time.
+#include <WiFi.h>
+#include <ArduinoOTA.h>
+#include "ota.h"
 
 static const char* DEVICE_NAME = "JiffyTrails";
 
@@ -71,6 +79,10 @@ void setup() {
   Serial.printf("advertising as \"%s\"\n", DEVICE_NAME);
   displayBootStage(2);            // radio is up
 
+  // Armed, not joined. otaTick brings the radio up only when there is no
+  // route - see ota.h for why the phone hotspot rather than a home network.
+  otaBegin();
+
   /*
     Now wait for a phone, but not forever. The ring stalling at two thirds is
     the honest report of "advertising, nobody has answered" - but a rider who
@@ -94,6 +106,9 @@ void loop() {
 
   // A demo owns NavState while it runs. The watchdog must not also run: it
   // would see no packets arriving and paint STALE over the demo.
+  otaTick(state.navActive());
+  if (otaBusy()) return;          // the update owns the screen
+
   demoSerial();
   if (demoActive()) demoTick(state);
   else              watchdogTick(state);   // link state and freshness

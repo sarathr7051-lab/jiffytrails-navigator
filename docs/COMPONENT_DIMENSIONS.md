@@ -1,0 +1,693 @@
+# Component dimensions
+
+Research compiled 29 Aug 2026 so the enclosure can be designed without callipers.
+
+**Status key** — every number below carries one:
+
+- **VERIFIED** — read from a datasheet, a dimensioned drawing, or a manufacturer spec page. URL given.
+- **INFERRED** — computed or derived from something verified (e.g. active area from the diagonal), or read off a photograph against a known reference. Stated as such.
+- **UNKNOWN** — not found. A calliper-free method to obtain it is given instead.
+
+> Silence is not agreement. If a dimension is not listed here, it was not found.
+> Do not assume an omitted number is fine — a case is the one part of this
+> project that cannot be fixed in software.
+
+---
+
+## 1. SmartElex 2.8" TFT (ILI9341, SPI, 240×320, non-touch)
+
+### 1.1 Source and SKU
+
+| Item | Value | Status |
+|---|---|---|
+| Robocraze SKU | **TIFDP0094** | VERIFIED — [robocraze.com product page][rc1] |
+| Product name | SmartElex 2.8 Inch TFT LCD Display 240×320 | VERIFIED — [rc1] |
+| Vendor manual | `2.8_inch_manual.pdf` | VERIFIED — [linked from rc1][rcpdf] |
+| Touch | **NO** — the vendor manual states "Touch Support: NO" | VERIFIED — [rcpdf] |
+| Underlying generic module | **LCDWIKI MSP2806** (the no-touch member of the MSP2806/MSP2807 pair) | INFERRED — see below |
+
+**The SmartElex manual publishes no dimensions at all.** It is nine pages of
+Adafruit_ILI9341 demo code plus a six-line feature list. Robocraze, the
+authoritative source for their own house brand, does not state a single
+millimetre anywhere on the product page or in the datasheet they link. That is
+the central finding for this part: **the vendor cannot answer the question.**
+
+So the dimensions below come from the generic module the SmartElex is a rebadge
+of. The identification rests on three independent matches:
+
+1. **The pin list is identical.** The SmartElex manual lists exactly nine module
+   pins — VCC, GND, RESET, DC, CS, SDI(MOSI), SDO(MISO), SCK, LED. The LCDWIKI
+   MSP2806/2807 manual lists the same nine as pins 1–9, with the five touch pins
+   (T_CLK, T_CS, T_DIN, T_DO, T_IRQ) as pins 10–14 that "you can not connect"
+   if the module has no touch function. ([MSP2807 manual][msp2807])
+2. **The bad advice matches.** The SmartElex manual's wiring table specifies a
+   10 K resistor on every signal line and VCC to 5 V — the exact LCDWIKI-family
+   instruction that `HARDWARE.md` already identifies as 5 V-Arduino guidance and
+   correctly discards for a 3.3 V ESP32.
+3. **The touch/no-touch split matches the SKU pair.** LCDWIKI ships one PCB in
+   two populations: MSP2807 with touch, **MSP2806 without**. A non-touch 2.8"
+   ILI9341 SPI board with this pin list is the MSP2806 population.
+
+Confidence: high that it is this module family. Not certain that Robocraze's
+batch is dimensionally identical to LCDWIKI's — **see §1.4 and §6 for the check
+to run before printing.**
+
+[rc1]: https://robocraze.com/products/smartelex-2-8-inch-tft-lcd-display-240x320-color-lcd-screen-for-diy-electronics
+[rcpdf]: https://cdn.shopify.com/s/files/1/0559/1970/6265/files/2.8_inch_manual.pdf
+[msp2807]: https://www.dragonwake.com/download/LCD/2.8inch_spi/2.8inch_SPI_Module_MSP2807_User_Manual_EN.pdf
+[lcdwiki2807]: https://www.lcdwiki.com/2.8inch_SPI_Module_ILI9341_SKU:MSP2807
+
+### 1.2 PCB outline and thickness
+
+| Dimension | Value | Status |
+|---|---|---|
+| PCB length (long edge) | **86.0 mm** | VERIFIED — "Module PCB Size 50.0x86.0 (mm)", [MSP2807 manual p.2][msp2807]; same figure on [LCD wiki][lcdwiki2807] |
+| PCB width (short edge) | **50.0 mm** | VERIFIED — same source |
+| PCB thickness | **1.6 mm** | INFERRED — not published. 1.6 mm is the default FR-4 thickness for this class of module and what `case.scad` already assumes. Treat as ±0.2 mm. |
+| Module weight | ~25 g | VERIFIED — [MSP2807 manual p.3][msp2807] |
+
+`case.scad` currently has `disp_pcb_w = 50.0`, `disp_pcb_l = 86.0`,
+`disp_pcb_t = 1.6`. **All three are correct** — the outline pair is confirmed by
+datasheet, the thickness is a reasonable standing assumption.
+
+Note the enclosure sizing consequence: `HARDWARE.md` describes the case as
+"roughly 94 × 58 × 20 mm". An 86 × 50 board plus 1.2 mm clearance plus 2.4 mm
+walls gives 93.2 × 57.2 mm, so that estimate was already right and needs no
+revision.
+
+### 1.3 Active display area
+
+| Dimension | Value | Status |
+|---|---|---|
+| Active area, short axis (240 px) | **43.2 mm** | VERIFIED — "Active Area 43.2x57.6 (mm)", [MSP2807 manual p.2][msp2807] |
+| Active area, long axis (320 px) | **57.6 mm** | VERIFIED — same source |
+
+**This is also derivable, and the derivation agrees, which is worth doing
+because it is the check that catches a mislabelled panel.**
+
+Pixel pitch on this panel is 0.18 mm exactly:
+
+```
+240 px × 0.18 mm = 43.2 mm
+320 px × 0.18 mm = 57.6 mm
+diagonal = sqrt(43.2² + 57.6²) = sqrt(1866.24 + 3317.76) = sqrt(5184) = 72.0 mm
+72.0 mm / 25.4 = 2.835 inches
+```
+
+So the true diagonal is **2.835"**, not 2.800". "2.8 inch" is the marketing
+round-down, and the panel is very slightly larger than the name implies.
+
+If you had instead taken the name at face value and computed from a literal
+2.800" diagonal at 3:4:
+
+```
+2.8 in = 71.12 mm ;  3-4-5 triangle → 0.6 × 71.12 = 42.67 mm, 0.8 × 71.12 = 56.90 mm
+```
+
+That gives **42.7 × 56.9 mm** — about **0.5 mm and 0.7 mm too small on the two
+axes**. Cutting a bezel aperture to those numbers would crop the live edge of
+the picture on all four sides. **Use 43.2 × 57.6, the datasheet pair, not the
+figure derived from the nominal 2.8 inches.** This is exactly the trap the
+"compute it from the diagonal" instinct walks into.
+
+`case.scad` already has `disp_active_w = 43.2`, `disp_active_l = 57.6`.
+**Both correct, now datasheet-backed rather than assumed.**
+
+---
+
+### 1.4 Active area position relative to the PCB — ★ THE ANSWER, AND IT IS NOT ZERO
+
+**LCDWIKI publishes a dimensioned mechanical drawing for the exact non-touch
+SKU.** It is not linked from any product listing, only from the downloads block
+of the MSP2807 wiki page, filed under the *other* SKU's name:
+
+> **[MSP2806_Size.pdf][size2806]** — "LCM OUTLINE, SKU MSP2806, V1.0, 2024-04-11"
+
+[size2806]: https://www.lcdwiki.com/res/MSP2807/MSP2806_Size.pdf
+
+Every number below is read from that drawing. **Status: VERIFIED.**
+
+#### Across the 50 mm axis (short edge) — centred
+
+```
+3.40  +  43.20 (LCD AA)  +  3.40  =  50.00 (PCB)   ← exact
+```
+
+The glass ("50.00 ±0.2 LCD BL") is the **full width of the PCB**, flush with
+both long edges, and the active area is **centred, 3.40 mm in from each side**.
+Corroborated independently by the panel supplier's own datasheet
+([QD-TFT2803 spec v1.1, Fig. 1][qd]), which carries the same 3.40 / 43.20 / 3.40
+chain.
+
+#### Along the 86 mm axis (long edge) — ★ NOT centred, off by 4.90 mm
+
+The drawing nests four spans from one datum edge and carries two offset callouts
+on the same dimension lines:
+
+| Feature | Span | Offset from the datum edge |
+|---|---|---|
+| PCB | 86.00 | 0 (datum) |
+| Mounting hole centres | 76.08 | 4.96 (inferred, symmetric — not labelled) |
+| LCD glass / backlight | 69.20 ±0.2 | **6.40** |
+| **Active area** | 57.60 | **9.30** |
+
+The datum is the PCB edge **furthest from the pin header**. Measuring from it:
+
+```
+PCB edge (far end)  ──0.00
+                       6.40   glass starts
+                       9.30   ACTIVE AREA starts   ┐
+                                                   │ 57.60
+                      66.90   active area ends     ┘
+                      75.60   glass ends
+                      86.00   PCB edge (header end)
+```
+
+Which makes the four bezel offsets, PCB edge to active area:
+
+| From which PCB edge | To the active area |
+|---|---|
+| Far end (away from header) | **9.30 mm** |
+| Header end | **19.10 mm** |
+| Each long side | **3.40 mm** |
+
+**So the active area centre sits 4.90 mm off the PCB centre, displaced toward
+the far end:**
+
+```
+active area centre from far edge = 9.30 + 57.60/2 = 38.10 mm
+PCB centre                       = 86.00 / 2      = 43.00 mm
+offset                           = 43.00 − 38.10  =  4.90 mm
+```
+
+> ### ★ `case.scad` has `disp_active_off = 0.0`. That is wrong by 4.90 mm.
+>
+> This is the most consequential number in this document. Printing the lid as
+> currently parameterised puts the aperture 4.90 mm off along the long axis.
+> The glass bezel is only **2.90 mm** wide at the far end (9.30 − 6.40), so a
+> 4.90 mm error does not merely look off-centre — **it crops roughly 4.9 mm off
+> one end of the live picture and exposes bare PCB at the other.**
+> Set `disp_active_off = 4.90` (sign per §5).
+
+#### Why the offset exists, and why it points that way
+
+The panel is specified **12 o'clock viewing direction**, driver **ILI9341V**
+([MSP2806 drawing, notes 2 and 3][size2806]). On a 12 o'clock TN panel the COG
+driver and the FPC tail run along the **bottom** edge — the edge facing the pin
+header, because the tail has to reach the board. The driver strip is what eats
+the border:
+
+```
+glass border, far end     = 9.30 − 6.40   = 2.90 mm   (plain bezel)
+glass border, header end  = 75.60 − 66.90 = 8.70 mm   (driver + FPC)
+                                            ────────
+                            total          = 11.60 mm = 69.20 − 57.60 ✓
+```
+
+That 2.90-against-8.70 asymmetry is the whole reason the aperture cannot be
+centred. It also independently confirms which edge is the datum: **the wide
+border must be at the header end**, because that is where the driver is.
+
+#### The residual doubt, and the check that closes it
+
+The chain above is verified for the **LCDWIKI MSP2806**. That the Robocraze
+SmartElex is dimensionally identical is **inferred** (§1.1), not proven —
+Robocraze publishes nothing. Before committing a lid print, run the
+calliper-free check in **§6.1**, which resolves the offset to about ±0.5 mm from
+a photograph. Or just print `lid()` on its own first and offer it up.
+
+[qd]: https://www.lcdwiki.com/res/MSP2807/QD-TFT2803%20specification_v1.1.pdf
+
+### 1.5 Assembled height (worst case)
+
+From the Side view of the [MSP2806 drawing][size2806]. **VERIFIED:**
+
+| Layer | Value |
+|---|---|
+| LCD glass, without back tape | 2.30 ±0.1 mm |
+| LCD back tape | 0.50 mm |
+| PCB | 1.60 mm |
+| **Bare module, glass face to back copper** | **4.40 ±0.2 mm** ("Total Thickness excluding Header") |
+| SMD components on the back | 2.20 mm max |
+| Pin header, projection behind the PCB | 8.38 mm |
+| Pin header, own height | 11.17 mm |
+| **Module + soldered straight header, glass to pin tips** | **12.78 mm** ("Total height (include Header)") |
+
+The arithmetic closes, which is a good sign the drawing is self-consistent:
+`1.60 + 0.50 + 2.30 = 4.40` ✓ and `4.40 + 8.38 = 12.78` ✓.
+
+> ### ★ The number that really sets case depth — and it breaks the 20 mm budget
+>
+> 12.78 mm is the module with a bare soldered header and **nothing plugged into
+> it**. The moment a female Dupont jumper goes on, the housing swallows the
+> 8.38 mm of pin and stands roughly **14–15 mm proud of the PCB back face**,
+> before the wire even bends. Realistic worst case, glass face to the back of a
+> seated Dupont shell:
+>
+> ```
+> 4.40 (module)  +  ~15 (Dupont shell)  ≈  19–20 mm      display alone
+> ```
+>
+> `HARDWARE.md` budgets the whole enclosure at **~20 mm deep**, and that depth
+> has to hold the display *and* the LOLIN32 *and* the wiring *and* two 2.4 mm
+> walls. **Dupont connectors on the display header do not fit. Not marginally —
+> at all.**
+>
+> Three ways out, best first:
+>
+> 1. **Solder the nine wires straight to the module's pads, no header.** Module
+>    stack becomes 4.40 mm plus the wire. Free, and it also deletes nine
+>    vibration-loosening friction joints from a device bolted to a motorcycle —
+>    the same argument `HARDWARE.md` already makes for a quarter-turn mount over
+>    a clamp screw.
+> 2. **Right-angle header**, so wires exit in the plane of the board. Adds about
+>    2.5 mm of depth instead of ~15.
+> 3. **Straight header with the pins cut short.** Keeps 12.78 mm. Worst of the
+>    three and still gives no connector.
+>
+> This interacts with the Stage 11 perfboard work in §4 and with the backlight
+> MOSFET that `HARDWARE.md` flags as "decide before soldering to perfboard".
+> **Decide the display's wire exit at the same time as the MOSFET.**
+
+### 1.6 Mounting holes
+
+**VERIFIED** from the [MSP2806 drawing][size2806]:
+
+| Property | Value |
+|---|---|
+| Count | 4, one near each corner |
+| Hole diameter | **Ø3.20 mm** ("4-3.20") — clearance for M3 |
+| Keep-out / pad diameter | **Ø4.70 mm** ("4-4.70") |
+| Hole centre grid | **44.00 × 76.08 mm** |
+| Inset from each long (50 mm) edge | **3.00 mm** — verified, `44.00 + 3.00 + 3.00 = 50.00` ✓ |
+| Inset from each short (86 mm) edge | **4.96 mm** — INFERRED as `(86.00 − 76.08) / 2`; the drawing labels the span but not the end insets, so this assumes symmetry along the length |
+
+Four Ø3.20 holes on a 44.00 × 76.08 grid are a proper mounting scheme for M3 —
+better than trapping the board between bosses and hoping the lid holds it. The
+case does not currently use them; it probably should.
+
+### 1.7 Connectors
+
+**VERIFIED** from the [MSP2806 drawing][size2806] and the [MSP2807 manual][msp2807]:
+
+| Property | Value |
+|---|---|
+| Header | single row, **14 positions**, 2.54 mm pitch |
+| Header pin span | **33.02 mm** (`13 × 2.54`) |
+| Position across the width | **centred** — `8.49 + 33.02 + 8.49 = 50.00` ✓ |
+| Which edge | the short edge at the **header end** — the same end as the 8.70 mm wide glass border |
+| Offset from that PCB edge | **2.00 mm** |
+| Projection behind the PCB | **8.38 mm** (pins); header body 11.17 mm |
+| SD card slot | on the **back** face, near the header end |
+| Back-side component height | 2.20 mm max |
+
+Of the 14 positions, **this project uses 9**: VCC, GND, CS, RESET, DC/RS,
+SDI(MOSI), SCK, SDO(MISO), LED. Positions 10–14 are the touch signals (T_CLK,
+T_CS, T_DIN, T_DO, T_IRQ), unpopulated on a non-touch board.
+
+Two things to confirm on the actual board, neither needing a calliper:
+
+- **Count the header positions.** If yours has 9 rather than 14 it is a
+  different population, and the 8.49 mm centring figure will not hold — the span
+  would be `8 × 2.54 = 20.32 mm`. The PCB outline and glass position are
+  unaffected either way.
+- **`HARDWARE.md` says to tie T_CS to 3.3 V if touch pins are exposed.** On a
+  true MSP2806 there is no touch controller to keep off the SPI bus, so the step
+  is moot — but only if the pins really are absent. Look before wiring.
+
+**Orientation, stated plainly because it is easy to get backwards: the pin
+header and the wide 8.70 mm glass border are at the SAME end of the board.** The
+narrow 2.90 mm border is at the far end. The aperture shifts toward the far end.
+
+---
+
+## 2. WEMOS LOLIN32 (ESP32, CH340, LiPo JST)
+
+_status: pending_
+
+### 2.1 Identification — ★ this is not actually a WEMOS product
+
+The board was bought from Robocraze at ₹449 as **SKU TIFCC0110**, listed as
+"ESP32 CP2102 Wireless Development Board D1 LOLIN32" ([product page][rclolin];
+the ₹449 sale price on the page matches the order exactly).
+
+[rclolin]: https://robocraze.com/products/esp32-development-board-lolin
+
+**Three independent signs say this is a third-party board that copies the
+LOLIN32 name and Arduino board profile, not the WEMOS original:**
+
+| | Genuine WEMOS LOLIN32 V1.0.0 | The board in hand |
+|---|---|---|
+| USB connector | Micro-USB ([espboards][espb]) | **USB-C** (`HARDWARE.md` BOM) |
+| USB-serial chip | CP2104 ([espboards][espb]) | **CH340**, bench-verified — and the Robocraze listing title says CP2102, a *third* answer |
+| GPIO 4 | broken out ([espboards pinout][espb]) | **not broken out** — bench-verified |
+| GPIO 16 | not in the published pinout ([espboards][espb]) | **broken out and working as TFT RESET**, verified 22 Aug 2026 |
+
+`HARDWARE.md` already records two of these as hard-won bench findings: "The USB
+chip is CH340, not CP2102, despite what some listings say", and "RESET is GPIO
+16, not 4. GPIO 4 is not broken out on the LOLIN32." **Those observations are
+the authority for this board.** Every published WEMOS LOLIN32 datasheet is,
+strictly, describing a different object.
+
+What follows from that for enclosure design: **there is no manufacturer
+datasheet for this board, and there cannot be one.** The outline below is from
+the vendor's own listing, which is the best available source, and the rest is
+inferred from parts whose dimensions *are* published. Treat §2 as materially
+less certain than §1, where an exact SKU drawing exists.
+
+[espb]: https://www.espboards.dev/esp32/lolin32/
+
+### 2.2 PCB outline and thickness
+
+| Dimension | Value | Status |
+|---|---|---|
+| PCB length | **58 mm** | VERIFIED against the vendor of the actual part — Robocraze spec table, "PCB Size 58×25mm" ([TIFCC0110][rclolin]) |
+| PCB width | **25 mm**, likely 25.4 | VERIFIED as 25 by Robocraze; [espboards][espb] gives **25.4 mm** for the WEMOS board. The two disagree by 0.4 mm — see below |
+| PCB thickness | **1.6 mm** | INFERRED — not published anywhere. Standard FR-4. |
+| Weight | 8 g | VERIFIED — [Robocraze spec table][rclolin] |
+| Digital I/O | 26 pins | VERIFIED — [Robocraze][rclolin] |
+
+**On the 25 vs 25.4 disagreement:** take **25.4 mm**. 25.4 mm is exactly 1.000
+inch and exactly 10 × 2.54 mm header pitch, which is how these boards are laid
+out; "25" is a rounded retail figure. `case.scad` already has `mcu_w = 26.0`,
+which is generous enough to swallow the difference either way.
+
+**A third source disagrees more seriously and should be discarded.** A widely
+mirrored "Wemos ESP32 Lolin32 Board BOOK" PDF gives "Dimensions 50x25mm" and "2
+mounting holes, 3 mm diameter" ([megma.ma mirror][book]). That document is
+describing the **LOLIN32 Lite**, not the LOLIN32 — its own text says the board
+"does not use the WROOM32 module … has the ESP32 chip, the 4MByte flash memory,
+and the antenna built directly on the board", and puts the LED on GPIO22. Both
+are Lite characteristics. **Do not use its 50 mm figure or its mounting holes.**
+
+[book]: https://megma.ma/wp-content/uploads/2021/08/Wemos-ESP32-Lolin32-Board-BOOK-ENGLISH.pdf
+
+`case.scad` has `mcu_l = 58.0`, `mcu_w = 26.0`. **Both fine** — length now
+vendor-confirmed, width carries about 0.6 mm of deliberate slack.
+
+### 2.3 Assembled height (worst case)
+
+Nothing publishes a stack height for this board, so it is built up from parts
+that are individually documented.
+
+| Layer | Value | Status |
+|---|---|---|
+| PCB | 1.6 mm | INFERRED (standard FR-4) |
+| ESP32-WROOM-32 module, above the PCB | **3.10 ±0.15 mm** | **VERIFIED** — Espressif datasheet, module is 18.00 ±0.15 × 25.50 × 3.10 ±0.15 mm ([Espressif][wroom]) |
+| USB-C receptacle, above the PCB | ~3.2 mm | INFERRED — typical 16-pin SMD USB-C receptacle |
+| **JST LiPo connector, above the PCB** | **~6 mm** | INFERRED — typical JST-PH 2.0 vertical header. **Probably the tallest thing on the top face.** |
+| Male header pins soldered through, below the PCB | ~2.54 mm of plastic, plus pin | INFERRED |
+| Female Dupont socket on top of a header | ~8.5 mm body | INFERRED |
+
+A useful sanity check that the outline is right: the WROOM-32 module is
+**25.50 mm** on its long side and **18.00 mm** on its short side. It can only sit
+on a 25.4 mm-wide board with its 18.00 mm dimension across the width. That fits,
+with about 3.7 mm of board either side — consistent with 25.4 mm and *not*
+consistent with a much narrower board.
+
+**Recommended build — LOLIN32 soldered to perfboard on its own header pins, no socket:**
+
+```
+perfboard              1.60
+header plastic         2.54
+LOLIN32 PCB            1.60
+tallest top-face part  6.00   (JST; 3.10 if the JST is removed or shorter)
+                      ─────
+                      11.74 mm, plus wire dressing
+```
+
+**`case.scad` has `mcu_stack = 14.0`. That is a sound number for this build** —
+11.74 mm plus a little over 2 mm for wiring. Keep it.
+
+> ### ★ But it fails immediately if you socket the board
+>
+> Put the LOLIN32 on **female** header strips so it can be unplugged, and the
+> stack becomes roughly `1.6 + 8.5 + 1.6 + 6.0 ≈ 17.7 mm` before wiring. Add the
+> display and two 2.4 mm walls and the case passes 25 mm, against a ~20 mm
+> budget in `HARDWARE.md`.
+>
+> This is the same trap as §1.5, from the other side. **The 20 mm enclosure
+> depth is only achievable if neither board uses pluggable connectors
+> internally.** That is a real design constraint and it should be decided
+> alongside the backlight MOSFET, before anything is soldered.
+
+> ### ★ A second, smaller `case.scad` finding
+>
+> ```
+> inner_h = disp_pcb_t + mcu_stack + 2.0;      // disp_pcb_t = 1.6
+> ```
+>
+> `disp_pcb_t` is the display's **bare PCB** thickness, but the thing that
+> occupies space in the cavity is the whole display module — glass, tape and PCB
+> — which §1.5 verifies as **4.40 mm**. As written, `inner_h` under-counts the
+> display by **2.80 mm**. Either set `disp_pcb_t = 4.4` (and rename it, since it
+> is then a module thickness), or add the 2.8 mm explicitly. Left alone, the lid
+> presses on the display.
+
+[wroom]: https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf
+
+### 2.4 Mounting holes
+
+**UNKNOWN — and quite possibly none.**
+
+No source consulted documents mounting holes on the LOLIN32 (as opposed to the
+Lite). The only figure found, "2 holes, 3 mm diameter", comes from the
+[board book][book] that §2.2 shows is describing the Lite, so it does not apply.
+
+This is a case where **absence of evidence is close to evidence of absence**:
+the LOLIN32 packs a 58 × 25.4 mm board with a 25.5 mm module, a USB-C jack, a
+JST connector and two full-length header rows. There is very little board left
+for mounting holes.
+
+**Design around it.** Do not put screw bosses under the MCU expecting holes to
+receive them. Retain the LOLIN32 either by soldering it to the perfboard (§4),
+which is the plan anyway, or with a printed clip or a dab of RTV. The display,
+by contrast, *does* have four documented Ø3.20 holes (§1.6) and should carry the
+mechanical load.
+
+To settle it in ten seconds without a calliper: **look at the board.** Corner
+holes are visible or they are not.
+
+### 2.5 Connectors — USB and JST
+
+**Mostly UNKNOWN. This is the weakest area in the whole document, and it matters
+because the USB-C port has to line up with a hole in a sealed wall.**
+
+| Property | Value | Status |
+|---|---|---|
+| USB connector type | USB-C | VERIFIED — `HARDWARE.md` BOM, and the board is in hand |
+| USB-C position | centred on one short (25.4 mm) end | INFERRED — universal on this board family |
+| USB-C receptacle height above PCB | ~3.2 mm | INFERRED — typical |
+| USB-C receptacle width | ~9.0 mm | INFERRED — typical |
+| **USB-C overhang past the PCB edge** | **UNKNOWN**, typically 0–1.5 mm | UNKNOWN |
+| JST LiPo connector | 2-pin, white, marked `+` | VERIFIED — `HARDWARE.md` |
+| JST position and height | on the top face; ~6 mm tall | INFERRED |
+
+Two notes that come straight out of `HARDWARE.md` and are worth repeating here
+because they are mechanical, not electrical:
+
+- **The `+` beside the white connector is the LiPo JST terminal, not a 5 V pin.**
+  The project deliberately excludes an internal battery, so this connector is
+  dead weight — but it is still physically present and, at ~6 mm, is probably
+  the **tallest object on the board**. If depth gets tight, desoldering it is a
+  legitimate 3 mm saving. Nothing in the design uses it.
+- **The USB port is needed after the case is closed**, because `HARDWARE.md`
+  requires uploads to go through the Arduino IDE over USB. So the wall opening
+  is not optional, and it is a hole in a sealed, gasketed enclosure that also
+  needs an ePTFE vent and a cable gland. Consider whether the USB opening should
+  be a blanking plug or a serviceable panel rather than an open slot.
+
+**How to place the USB cut-out without a calliper:** do not try to measure the
+connector. Instead, **print the body with no USB opening at all, offer the board
+up, and mark through** — or print a 1 mm-thick throwaway test coupon of just
+that wall face with a generous 12 × 5 mm slot, check the plug seats, and
+transfer the winning dimensions. A USB-C plug overmould is much larger than the
+receptacle, so size the hole for the **plug**, not the socket.
+
+---
+
+## 3. BOBO BM4 mount
+
+_status: pending_
+
+### 3.1 Ball diameter
+
+**UNKNOWN from any published source. 17 mm is a well-founded guess, not a fact.**
+
+BOBO publishes no engineering dimensions for the BM4 at all. Every retailer
+listing checked repeats the same marketing block and nothing more. What *is*
+confirmed across listings:
+
+| Item | Value | Status |
+|---|---|---|
+| Handlebar sizes supported | **22, 25 and 32 mm** via metal buckle + plastic spacers | VERIFIED — [Moto Central listing][mc] ("We support 3 common sizes of handlebar diameter i.e. 22, 25, and 32 mm") |
+| Hex key included | yes, for the buckle | VERIFIED — [mc] |
+| Jaw grip range | 4.0–6.5" phones (some listings say 4.0–7.0") | VERIFIED — [mc], [store4riders][s4r] |
+| **Ball diameter** | **not published by anyone** | **UNKNOWN** |
+
+[mc]: https://motocentral.in/products/bobo-jaw-grip-aluminium-mobile-holder-motorcycle-mobile-mount-without-charger
+[s4r]: https://www.store4riders.com/bobo-bm4-jaw-grip-motorcycle-mobile-mount.html
+
+**Why 17 mm is nevertheless the right thing to design for.** 17 mm is a genuine
+de-facto standard for this class of mount — action-camera rigs, motorcycle phone
+holders and modular vehicle systems — and it is a *tight* standard, not a
+nominal one: true 17 mm balls hold **±0.05 mm** ([17mm ball mount guide][ball]).
+Arkon, iBOLT, Tackform, ProClip and BRCOVAN all build to it. A ₹1,200 Indian
+jaw-grip mount using a non-standard ball would be unusual.
+
+[ball]: https://electronics.alibaba.com/buyingguides/17mm-ball-mount-guide-how-to-choose-right
+
+**Confirm it in two minutes without callipers — the paper-strip method.** This is
+much better than trying to eyeball a curved surface against a ruler:
+
+1. Cut a strip of paper about 8 mm wide. Wrap it once round the ball's equator,
+   pulled snug, and mark where it overlaps with a sharp pencil.
+2. Unwrap, lay it flat on a steel rule, read the distance between the marks.
+   That is the **circumference**.
+3. Divide by π (3.1416).
+
+A 17 mm ball gives **53.4 mm** of circumference. A 16 mm ball gives 50.3, an
+18 mm gives 56.5 — so a reading you can take to ±1 mm on a ruler resolves the
+diameter to about **±0.3 mm**, which is better than most people manage with
+cheap callipers anyway. If you read 53–54 mm, it is a 17 mm ball.
+
+**A second free check you already own:** the kit ships **22 mm and 25 mm plastic
+spacers and a 32 mm metal buckle**. Those are three known, moulded diameters
+sitting in the box. Photograph the ball next to the 22 mm spacer, square on,
+and compare — 17 against 22 is an obvious visual ratio (0.77). This doubles as
+the scale reference for §6.
+
+### 3.2 Socket / arm interface
+
+**UNKNOWN. Nothing is published, and this one cannot be derived.**
+
+The BM4's arm terminates in a socket that pinches the ball, tightened by the
+included hex key. No source gives the socket bore, the jaw geometry, the arm
+cross-section, or the thread size.
+
+**The good news is that the design does not need those numbers.** The plan in
+`HARDWARE.md` is to discard the broken copper jaw plate and print an adapter
+that engages the **ball**, and a ball is the one feature here that *is* a
+standard. So design the adapter against the ball, not against BOBO's arm:
+
+- **Print a two-piece pinch socket** — a spherical cup of Ø17.0 mm split across
+  its axis, pulled together by two M3 screws. It grips by elastic deformation,
+  so a 0.2–0.3 mm error in the ball diameter is absorbed by the screws rather
+  than becoming a rattle or a press-fit failure.
+- **Make the cup a little deeper than a hemisphere** (about 60 % of the sphere,
+  ~10 mm of a 17 mm ball) so it captures rather than merely rests.
+- **Do not print a one-piece snap-over socket.** It will either be too loose on
+  day one or crack at the split after a few thermal cycles in a black-plastic
+  part sitting in Bengaluru sun — and `HARDWARE.md` already establishes the
+  interior reaches 53–70 °C.
+- Print it in **ASA** like the rest, and note the same argument `HARDWARE.md`
+  makes about friction joints: a pinch socket *is* a friction joint, so use a
+  nyloc nut or thread-locker on those M3s.
+
+### 3.3 Garmin quarter-turn lug pattern — ★ the `case.scad` figures cannot be verified, and the model has a bug
+
+**Checked against the best available sources. Two separate problems.**
+
+#### Problem 1: Garmin publishes nothing, so "the standard" has no authority
+
+> "Garmin doesn't publish the dimensions of the quarter-turn interface. The
+> numbers circulating on forums and repositories are hobbyist measurements."
+> — [Kapy CAD, *The Garmin quarter-turn mount*][kapy]
+
+[kapy]: https://kapycad.com/en/learn/standards/garmin-quarter-turn
+
+The only dimensional table that source offers is explicitly labelled
+"indicative values from one unit, not official":
+
+| Feature | Kapy CAD indicative range | `case.scad` value | Verdict |
+|---|---|---|---|
+| Tab thickness | **~1–1.5 mm** | `mount_lug_t = 2.4` | **outside the range, ~2× too thick** |
+| Effective overlap | ~1.5–2 mm | — | not modelled |
+| Overall diameter | **~20–24 mm** | `mount_lug_r = 11.5` → Ø23 | plausible, inside the range |
+| | | `mount_plate_d = 26.0` | larger than any quoted figure |
+| Turn angle | 90° | 90° | ✓ |
+| Lug width | *not given by any source* | `mount_lug_w = 8.0` | **UNKNOWN — unverifiable** |
+
+So of the four values `case.scad` flags as UNVERIFIED: **one (lug radius) is
+plausible, one (plate Ø) is oversized, one (lug thickness 2.4) contradicts the
+only published range, and one (lug width 8) cannot be checked at all.** The
+`★ UNVERIFIED` comment in the file is entirely justified and must stay.
+
+#### Problem 2: the real Garmin interface has TWO tabs at 180°, not three at 120°
+
+Both sources consulted describe the same geometry, and it is not what
+`case.scad` models:
+
+> a bayonet with **two opposing tabs** on the device back positioned at 180°,
+> the cradle having a matching recess — insert rotated ~90° from the in-use
+> position, then turn a quarter turn. ([Kapy CAD][kapy])
+
+`case.scad` builds `for (a = [0, 120, 240])` — **three lugs at 120°**.
+`HARDWARE.md` likewise describes "a 3-lug Garmin-style quarter-turn" and argues
+for it as "three lugs behind solid shoulders". That reasoning is sound
+mechanically, but the part it produces is **not Garmin-compatible**. It will not
+enter a genuine Garmin cradle, a Garmin-compatible aftermarket cradle, or any of
+the printed Garmin mounts on Thingiverse/Printables.
+
+**This is a decision, not necessarily a defect.** Two coherent options:
+
+- **Keep 3 lugs at 120°** and accept that the interface is *JiffyTrails-only*.
+  Then you must also print the mating cradle, and the word "Garmin" should come
+  out of `HARDWARE.md` and `case.scad` before it misleads someone into buying a
+  Garmin part. Mechanically this is the stronger joint and the reasoning in
+  `HARDWARE.md` stands.
+- **Go to 2 tabs at 180°** to gain the real ecosystem — cheap aftermarket
+  Garmin-compatible bar cradles, out-front mounts and stem mounts, most under
+  ₹500. Then the dimensions still have to be reverse-engineered from a physical
+  sample, because Garmin publishes none.
+
+Given the owner has no Garmin hardware to copy from, **option 1 (print both
+halves, drop the Garmin name) is far lower risk** and keeps the vibration
+argument intact.
+
+#### Problem 3: as written, `mount_plate()` renders no lugs at all
+
+Independent of which pattern is chosen, the current code does not produce the
+part it describes:
+
+```scad
+cylinder(h = mount_boss_h, d = mount_plate_d);        // Ø26  → radius 13
+...
+polygon([[0,0], [mount_lug_r, -mount_lug_w/2],
+                [mount_lug_r,  mount_lug_w/2]]);      // reaches radius 11.5
+```
+
+**The lugs extend to radius 11.5, inside the Ø26 (radius 13) cylinder they are
+unioned with, so they are completely swallowed by it.** The subsequent
+`difference()` then bores Ø18 straight through the full height. What actually
+renders is a **plain tube, Ø26 outside, Ø18 inside, 6 mm tall — with no
+quarter-turn feature anywhere on it.**
+
+For the lugs to exist, `mount_lug_r` must be **greater than** `mount_plate_d / 2`
+(i.e. > 13 with the current plate), or the plate diameter must shrink below
+2 × 11.5 = 23 mm. Given Kapy CAD's ~20–24 mm overall range, the sane fix is to
+**reduce `mount_plate_d` to about 18–20 mm and keep `mount_lug_r = 11.5`**, so
+the lugs stand ~2 mm proud — which also lands the overall Ø23 comfortably inside
+the indicative range.
+
+The file's own advice — "Print `mount_test_plate()` on its own first … it is a
+3 g, four-minute print" — is exactly right and would have caught this. **Do that
+before anything else.**
+
+---
+
+## 4. Perfboard recommendation
+
+_status: pending_
+
+---
+
+## 5. Mapping onto `hardware/case.scad`
+
+_status: pending_
+
+---
+
+## 6. What could not be found, and how to get it without callipers
+
+_status: pending_

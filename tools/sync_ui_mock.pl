@@ -34,6 +34,7 @@ my @FILES = qw(
     nav_types.h
     glyph_data.h
     geom.h     geom.cpp
+    ota.h      ota.cpp
     display.h  display.cpp
     maneuvers.h maneuvers.cpp
     demo.h     demo.cpp

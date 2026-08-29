@@ -40,6 +40,7 @@
 #include "display.h"
 #include "maneuvers.h"
 #include "geom.h"
+#include "ota.h"          // FW_VERSION, for the boot screen
 
 // display.cpp owns the panel. maneuvers.cpp gets it through the TFT_eSPI&
 // parameter in its signature; nothing else touches it.
@@ -1078,6 +1079,13 @@ void displayBootBegin() {
   drawTracked("JIFFY",  MARK_CX, WORD1_Y, 2, 3, C_MUTED);
   drawTracked("TRAILS", MARK_CX, WORD2_Y, 4, 1, C_FG);
 
+  // The firmware version, small and low. BUILD_PLAN Stage 10 asks for it by
+  // name: after an over-the-air update, "did it land" has to be answerable by
+  // looking at the device rather than by trusting the uploader.
+  tft.setTextColor(C_MUTED, C_BG);
+  tft.setTextDatum(BC_DATUM);
+  tft.drawString(FW_VERSION, MARK_CX, H - 6, 2);
+
   // ~330 ms, eased out: fast away, settling into the corner.
   static const uint8_t EASE[] = { 0, 33, 57, 74, 85, 92, 97, 100 };
   for (uint8_t i = 0; i < sizeof(EASE); i++) {
@@ -1385,4 +1393,39 @@ void displayTick() {
   tft.init();
   tft.setRotation(ROTATION);
   displayInvalidate();
+}
+
+// ------------------------------------------------------------------- OTA
+
+/*
+  Deliberately plain, and deliberately not the boot animation. An update is a
+  moment where the honest thing is a number that moves: if it stops, something
+  is wrong, and a decorative animation would hide exactly that.
+*/
+static const int16_t OTA_BAR_X = 40, OTA_BAR_W = 240;
+static const int16_t OTA_BAR_Y = 130, OTA_BAR_H = 22;
+
+void displayOtaBegin() {
+  tft.fillScreen(C_BG);
+  tft.setTextColor(C_FG, C_BG);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString("UPDATING", W / 2, 84, 4);
+
+  tft.setTextColor(C_MUTED, C_BG);
+  tft.drawString("do not disconnect", W / 2, 190, 2);
+
+  // The track, so the bar reads as a proportion rather than as a growing blob.
+  tft.drawRect(OTA_BAR_X - 2, OTA_BAR_Y - 2, OTA_BAR_W + 4, OTA_BAR_H + 4, C_MUTED);
+}
+
+void displayOtaProgress(uint8_t pct) {
+  if (pct > 100) pct = 100;
+  const int16_t w = (int16_t)((int32_t)OTA_BAR_W * pct / 100);
+  tft.fillRect(OTA_BAR_X, OTA_BAR_Y, w, OTA_BAR_H, C_FG);
+
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%u%%", (unsigned)pct);
+  tft.setTextColor(C_FG, C_BG);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString(buf, W / 2, OTA_BAR_Y + OTA_BAR_H + 26, 4);
 }

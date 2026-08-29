@@ -42,4 +42,17 @@
 // ---------- SPI ----------
 // Reads are less tolerant than writes, hence the lower read clock.
 #define SPI_FREQUENCY       27000000
-#define SPI_READ_FREQUENCY  20000000
+
+/*
+  Reads are MUCH slower than writes on this controller, and 20 MHz was too
+  fast. MISO is wired, yet the boot probe in display.cpp kept coming back with
+  garbage and disarming the panel watchdog - so the one mechanism that could
+  recover the mirrored-screen fault was switched off by a number, not by a
+  missing wire.
+
+  6 MHz because reads happen twice every two seconds and their speed is worth
+  nothing. If the boot line now says "watchdog armed", the watchdog is real and
+  a corrupted MADCTL heals itself within six seconds instead of persisting
+  until a power cycle.
+*/
+#define SPI_READ_FREQUENCY   6000000

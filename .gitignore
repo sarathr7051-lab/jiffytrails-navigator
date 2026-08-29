@@ -5,3 +5,4 @@ android/navlink/app/build/
 android/navlink/.gradle/
 android/navlink/local.properties
 build/
+firmware/navigator/wifi_secrets.h

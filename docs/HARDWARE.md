@@ -326,3 +326,24 @@ Print settings: 0.2 mm layers, **4 perimeters** (the lugs carry all the load),
 30–40 % infill, sealing face flat on the bed.
 
 Drawings in `hardware/mount-design.html`.
+
+### ★ Partition scheme: Minimal SPIFFS, not Default
+
+Adding WiFi and ArduinoOTA took the sketch from 51% to **97%** of the default
+partition. OTA needs **two** app partitions — the incoming image is written to
+the inactive one while the current one runs — so 97% does not mean "nearly
+full", it means OTA would succeed once and then have nowhere to go.
+
+In the Arduino IDE: **Tools → Partition Scheme → "Minimal SPIFFS (Large APPS
+with OTA)"**. On the command line, `--fqbn esp32:esp32:lolin32:PartitionScheme=min_spiffs`.
+
+That moves it to **65% of 1.97 MB**, which leaves room to keep building.
+
+**The setting must match when you flash over USB.** Upload with the default
+scheme and the image lands in a layout the OTA partitions do not agree with;
+the device runs, and the first OTA attempt fails in a way that looks like a
+network fault. Set it once in the IDE and it sticks per board.
+
+This is exactly the kind of thing BUILD_PLAN Stage 10 exists to find before the
+case is sealed. Discovered on the bench, it is a menu item; discovered after
+gluing, it is a cracked enclosure.

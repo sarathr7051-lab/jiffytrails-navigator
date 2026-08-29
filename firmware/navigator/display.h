@@ -37,3 +37,15 @@ void displayBootFinish(bool linked);
 // and re-initialises it if not — see the comment on displayTick() for why this
 // device needs a display watchdog at all.
 void displayTick();
+
+/*
+  The OTA screens. An update takes long enough that a blank panel would read as
+  a crash, and the display is the only progress indicator this device has.
+
+  displayOtaBegin takes the screen; displayOtaProgress redraws only the bar, so
+  the percentage moving is itself proof the transfer is live rather than hung.
+  After an update the device reboots, so nothing has to hand the screen back -
+  except on error, where displayInvalidate() does it.
+*/
+void displayOtaBegin();
+void displayOtaProgress(uint8_t pct);
