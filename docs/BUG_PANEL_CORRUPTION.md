@@ -10,7 +10,7 @@
 > **verified** from what is **inferred** from what is **unknown**. The most
 > valuable output of this document is not the ranking — it is §8.0, the list of
 > observations that would actually discriminate between the top hypotheses, and
-> the £0 forensics sketch that can settle §2 in ten minutes on the bench.
+> the zero-cost forensics sketch that can settle §2 in twenty minutes on the bench.
 
 ---
 
@@ -898,3 +898,194 @@ These are speculative but cheap to check and worth listing:
 > corrupted, because it is the only screen with no repaint path at all. Item 2
 > above is the one candidate for genuine electrical specialness, and it is
 > answerable for free.
+
+---
+
+## 7. Verified / inferred / unknown
+
+### 7.1 Verified — checked against the datasheet, the library source, or this repo
+
+| Fact | Source |
+|---|---|
+| Runtime MADCTL on this build is `0x28` (MV \| BGR) | `ILI9341_Rotation.h` case 1; `ILI9341_Defines.h:56-72`; `display.cpp:41` |
+| MADCTL is written **once per boot** and never again at runtime | `display.cpp:1069-1070`; recovery path at 1272-1273 is unreachable via 1252 |
+| MY/MX/MV control **MCU-to-memory write/read direction** — not the stored image | datasheet §8.2.29 p.127, verbatim |
+| MADCTL "makes no change on the other driver status" — safe to re-assert | datasheet §8.2.29 p.127, verbatim |
+| MADCTL reset default is `00h` | datasheet §8.2.29 p.127 |
+| `0xE8` = MY\|MX\|MV\|BGR = TFT_eSPI **rotation 3** = 180° of rotation 1 | `ILI9341_Rotation.h` case 3 |
+| CASET clips at `00EFh` when MV=0 and `013Fh` when MV=1; **"data of out of range will be ignored"** | datasheet §8.2.20 p.110, Note 1, verbatim |
+| RAMWR resets the column/page registers, and **"Sending any other command can stop frame Write"** | datasheet §8.2.22 p.114, verbatim |
+| GRAM is **random on power-on** but **not cleared** by SW or HW reset | datasheet §8.2.22 p.114 default table, verbatim |
+| A hardware reset **blanks the display** and sets MADCTL to `00h` | datasheet §15.4 p.230 Note 3 |
+| RESX rejects pulses **< 5 µs**; resets on **> 10 µs** | datasheet §15.4 p.230 Note 2 |
+| **Datasheet max SPI write clock is 10 MHz** (`twc` min 100 ns); this build runs **27 MHz = 2.7× spec** | datasheet §18.3.4 p.243; `User_Setup.h:44` |
+| The panel watchdog is **disabled at runtime** on this build | `display.cpp:847`, `1252`; the boot probe at 1076-1079 |
+| The watchdog checks **RDDPM `0x0A`** only — which **cannot detect MADCTL corruption** | `display.cpp:817-819`, `1258-1260` |
+| **`UI_ARRIVED` has no repaint path**; it draws once and returns for 30 s | `display.cpp:1126`, `1137`, `1162-1169`; `nav_types.h:72` |
+| TFT_eSPI re-sends CASET/PASET/RAMWR before **every** drawing op, so shifts do not accumulate across ops | `TFT_eSPI.cpp:3360-3364` |
+| `pushBlock` on ESP32 uses **512-bit (32-pixel) FIFO bursts**, CS held low, SCK idle between them | `Processors/TFT_eSPI_ESP32.c:255-289`; `TFT_eSPI_ESP32.h:204-239` |
+| Full frame at 27 MHz = **45.5 ms**; the panel rail measured **3.18 V** | arithmetic; HARDWARE.md lines 47, 106 |
+| Night mode defaults **off** and is only set by an optional BLE CONFIG tail byte | `nav_types.h:115`; `ble.cpp:259-272`; `navigator.ino:94` |
+| The panel has **previously** lost its configuration mid-run, recovering only on a power cycle | `display.cpp:797-809`; HARDWARE.md |
+
+### 7.2 Inferred — reasoned, consistent with the evidence, not demonstrated
+
+- **The observed mirroring is `MADCTL = 0xE8`.** Strong inference from symptom
+  (A) plus the rotation table. **Not confirmed** — `0xC8` and `0x08` are not
+  excluded by a verbal description of the photo (§4.2).
+- **The hatched band is GRAM the fill did not cover**, not corrupted fill data.
+  Follows from the shift-invariance of a uniform stream (§4.3) and from the
+  hatched area being roughly twice the total drawn content of the frame.
+- **At least two distinct corruptions occurred**, or the band's orientation has
+  been misread. Follows from the MV=1 / MV=0 contradiction in §4.2.
+- **The bit error rate is around 10⁻⁹–10⁻¹⁰**, from one event against ~1.5 Mbit
+  per full paint. Order-of-magnitude only; the true event count is unknown
+  (§6.1), so this could be off by orders of magnitude in the *pessimistic*
+  direction.
+- **A stray command byte (H1) is the most economical single cause**, because the
+  datasheet's "any other command can stop frame Write" makes one glitch produce
+  both a register change and a truncated fill.
+- **Marginal supply is the enabling condition** for whichever SPI mechanism
+  applies: 3.18 V measured, no decoupling anywhere in the design, BLE bursts.
+
+### 7.3 Unknown — and this is the honest majority of it
+
+- **What the photograph actually shows.** Band orientation (H/V/oblique), which
+  bezel edge it touches, its stripe period, whether the region contains
+  saturated colour, whether the letters are 180°-rotated or mirror-imaged, and
+  whether the destination-name line rendered at all. **Every one of these is
+  recoverable from the existing image at zero cost and each one discriminates.**
+- **Whether the ESP32 rebooted.** Nothing logs it. This is the single largest
+  hole and the cheapest to close.
+- **Whether the panel lost power.** Distinguishable from the GRAM appearance
+  (§4.4) and from a reboot log.
+- **What the device was powered from** on that ride (§6.3 item 2).
+- **Whether `night=1` had been configured** (§1.2).
+- **The true event rate.** §6.1 — prior occurrences on nav screens would have
+  been invisible.
+- **Ambient conditions**: temperature, vibration level, whether the unit was
+  jostled or the breadboard bumped at the moment of arrival.
+- **Whether this reproduces at all.** It has not been reproduced.
+
+> **What one observation buys you: almost nothing.** It establishes that the
+> failure mode exists and is not the previously-documented blank-white fault. It
+> does not establish frequency, trigger, or mechanism. **Do not spend money or a
+> rewire session on the strength of this document alone — spend twenty minutes
+> on §8.0 first, because two of the four items there are free and one of them
+> can be done without leaving the desk.**
+
+---
+
+## 8. Ordered action list
+
+### 8.0 ★ First: four observations, before changing anything
+
+These cost nothing and they collapse most of the hypothesis space.
+
+1. **Re-examine the photograph. Zoom in.** Answer:
+   - Does the band touch the **left/right** bezel edge (vertical, full height) or
+     the **top/bottom** (horizontal, full width)? → §4.2. Vertical ⇒ MV was 0
+     during the fill; horizontal ⇒ a truncated write with MV=1.
+   - Are the stripes **fine random noise** (⇒ the panel lost **power**, GRAM
+     re-randomised, §4.4) or **recognisable smeared remnants of the nav screen**
+     (⇒ the panel kept power, the fill was truncated)?
+   - Is there any **saturated blue / yellow / cyan** anywhere? The UI is
+     monochrome by design, so false colour ⇒ a byte/bit shift in a content push
+     (§4.3 item 3).
+   - Is the word **180°-rotated** (running along the long axis) or
+     **90°-rotated** (running along the short axis)? → decides `0xE8` vs `0xC8`.
+2. **★ Write the MADCTL forensics sketch** — the decisive test, and it is the
+   best twenty minutes available. A standalone sketch that renders the ARRIVED
+   layout, then writes each candidate MADCTL raw (`0x28, 0x68, 0xA8, 0xE8,
+   0x08, 0xC8, 0x00`) and repaints, photographing each. **Compare against the
+   ride photo and read the answer off directly.** This converts §2.4 from
+   inference to fact. Costs nothing, risks nothing, and every later decision
+   depends on it. *(Remember HARDWARE.md line 133: upload through the Arduino
+   IDE, and do not open the COM port from a script.)*
+3. **Recall what the device was powered from** on that ride, and whether the
+   supply could have changed at the moment of arrival (§6.3 item 2).
+4. **Check whether `night=1` was ever sent** by the phone/navsim on that ride
+   (§1.2). If it was, INVON joins the suspect list and the diagnosis shifts.
+
+### 8.1 Firmware — cheap, now, in this order
+
+| # | Change | Where | Why |
+|---|---|---|---|
+| 1 | **Log `esp_reset_reason()` and a boot counter** (RTC-retained), plus uptime at every screen transition | `navigator.ino` `setup()` | Closes the largest evidence gap in §7.3. Free. **Do this first** — it decides between H3 and everything else on the next occurrence. |
+| 2 | **Re-assert MADCTL immediately before every full chrome repaint** | `drawChrome()` entry, `display.cpp:680` | 593 ns, unconditional, guarantees each repaint starts from known state. |
+| 3 | **Add a static-screen refresh**: if `scr` is `UI_ARRIVED` or `UI_IDLE` and nothing has repainted for 5 s, re-assert MADCTL and force a repaint | `displayRender`, near `display.cpp:1165` | ★ The one change that would have prevented the photographed outcome regardless of cause. Prefer the fill-free variant (§5.1) to avoid a 5 s flicker. |
+| 4 | **Extend the re-assert to COLMOD `0x3A`=`0x55` and INVOFF `0x20`** | alongside #2 | Under 10 bytes total; covers two more silent-corruption modes. |
+| 5 | **SPI 27 → 20 MHz** | live `User_Setup.h` (**`C:\dev\Arduino\libraries\TFT_eSPI\User_Setup.h`** — HARDWARE.md line 150) and the repo reference copy | +35% frame time, currently imperceptible. Revert after soldering, with a retest. |
+| 6 | **Instrument, do not just fix**: count and log every time #3 fires and (once MISO exists) every RDMADCTL mismatch | `display.cpp` | Turns "seen once" into a measured rate. Without this, no later fix can be shown to have worked. |
+
+**Verification for #3 without waiting for a real fault:** add a debug serial
+command that deliberately writes `MADCTL = 0xE8` at runtime, and confirm the
+screen self-corrects within 5 s. `demo.cpp` already has a serial command
+surface to hang this off.
+
+### 8.2 Wiring — before the case is built
+
+In order. Items 1–2 are worth doing on the breadboard today; 3–5 belong to the
+Stage 11 soldering session.
+
+| # | Change | Cost | Rationale |
+|---|---|---|---|
+| 1 | **100 nF X7R across the display module's VCC/GND, shortest possible leads; 10 µF bulk on the rail beside it; 100 nF + 10 µF at the ESP32 3V3** | ~₹10 | §5.3. Highest value per rupee on the list. Do it now, on the breadboard. |
+| 2 | **Re-route the D/CX jumper away from SCK**; if possible run a ground jumper between them | free | §5.6. Direct countermeasure to H1, the top-ranked hypothesis. |
+| 3 | **MISO: GPIO 19 → SDO** — and change the watchdog to check **RDMADCTL `0x0B` against `0x28`**, not just RDDPM `0x0A` | 1 wire | §5.4. The wire alone re-arms a watchdog that **cannot see this fault**; the register change is what makes it worth doing. |
+| 4 | **33 Ω series on SCK and MOSI**, at the ESP32 end | ~₹5 | §5.5. Source termination for ~230 MHz edge content on 150–200 mm wires. |
+| 5 | **10 kΩ pull-up on CS (GPIO 15) to 3V3**; confirm RESET (GPIO 16) is genuinely wired and add 10 kΩ to 3V3 | ~₹2 | §5.6. Guards the brown-out window when the ESP32 tri-states its pins. |
+| 6 | **Solder to perfboard, shortest practical leads** | Stage 11 | §5.7. The actual fix. Everything above is scaffolding until then. |
+
+### 8.3 Documentation follow-ups
+
+- **HARDWARE.md line 40, "No series resistors."** Amend to make clear it rejects
+  the vendor's **10 kΩ level-shifting** advice for 5 V Arduinos, and does **not**
+  rule out **33 Ω source-termination** resistors, which are appropriate here.
+  As written it could steer a future session away from the right fix (§5.5).
+- **HARDWARE.md line 93**, on raising the clock to 40 MHz after soldering: add
+  the datasheet figure — **`twc` min 100 ns = 10 MHz specified maximum**. Both 27
+  and 40 MHz are overclocks; 40 MHz would be 4× spec. That does not mean don't
+  do it, but it should be a decision made with the number in view.
+- **`display.cpp:811`** says *"MISO is wired to GPIO 19"* while
+  `display.cpp:829` says it *"is not wired — it was removed deliberately."*
+  The first comment is stale and contradicts the second. Fix it — a future
+  session reading only the first will draw the wrong conclusion.
+- **Record this bug's outcome here** when the next occurrence (or non-occurrence
+  over N rides) is observed. This file's value is as a running record, not a
+  one-shot analysis.
+
+---
+
+## 9. References
+
+**ILI9341 datasheet** (ILI Technology, v1.11) — sections cited:
+
+- §8.2.20 **CASET (2Ah)**, p.110 — out-of-range column clipping, MV-dependent limits
+- §8.2.22 **RAMWR (2Ch)**, p.114 — address counter reset, "any other command can stop frame Write", GRAM default contents
+- §8.2.29 **MADCTL (36h)**, p.127 — MY/MX/MV/ML/BGR/MH definitions, reset default
+- §15.4 **Reset Timing**, p.230 — tRW 10 µs, spike rejection, display blanks during reset
+- §18.3.4 **Display Serial Interface Timing (4-line SPI)**, p.243 — twc min 100 ns
+
+Mirrors: <https://cdn-shop.adafruit.com/datasheets/ILI9341.pdf> ·
+<https://newhavendisplay.com/content/app_notes/ILI9341.pdf>
+
+**TFT_eSPI** v2.5.43 (Bodmer) — <https://github.com/Bodmer/TFT_eSPI>
+
+- `TFT_Drivers/ILI9341_Rotation.h` — the MADCTL value per rotation
+- `TFT_Drivers/ILI9341_Defines.h` — `TFT_MAD_*` masks, `ILI9341_RDMADCTL 0x0B`
+- `TFT_eSPI.cpp:3360` `setWindow` — per-operation CASET/PASET/RAMWR re-issue
+- `Processors/TFT_eSPI_ESP32.c:255` `pushBlock` — 512-bit FIFO bursts
+- `Processors/TFT_eSPI_ESP32.h:204` — `CS_L`/`CS_H` macros
+- Issue 1172, the `ILI9341_2_DRIVER` alternative init this panel needs —
+  <https://github.com/Bodmer/TFT_eSPI/issues/1172>
+- Library guidance on clock rates —
+  <https://doc-tft-espi.readthedocs.io/hardware/ili9341/>
+
+**This repo:**
+
+- `docs/HARDWARE.md` — pin map, 3.18 V measurement, 27 MHz rationale, frame timings, sketchbook trap
+- `firmware/navigator/display.cpp` — `drawArrived` 632, `drawChrome` 680, panel watchdog 795-847, `displayBegin` 1068, `displayRender` 1088, `displaySetNight` 1200, `displayTick` 1250
+- `firmware/navigator/User_Setup.h` — pins, `SPI_FREQUENCY 27000000`
+- `firmware/navigator/nav_types.h:72` — `ARRIVAL_DWELL_MS`
+- `firmware/navigator/navigator.ino:86` — the main loop

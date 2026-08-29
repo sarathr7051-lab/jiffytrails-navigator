@@ -819,15 +819,30 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   on a motorcycle, where the supply is a 12 V accessory rail and the whole
   assembly is being shaken. So the device asks.
 
-  MISO is wired to GPIO 19, so RDDPM (0x0A) can be read back. Bit 2 is DISON
-  (display on) and bit 4 is SLPOUT (awake); both are set on a healthy panel and
-  clear after an unwanted reset. Three consecutive bad reads are required before
-  acting, because a single garbled read on a marginal bus should not trigger a
-  visible re-init.
+  MISO is NOT wired on this build - see panelReadable below, which detects that
+  at boot and disarms the watchdog. When it IS wired, two registers are read.
+
+  RDDPM (0x0A): bit 2 is DISON, bit 4 is SLPOUT. Both set on a healthy panel,
+  both clear after an unwanted reset.
+
+  ★ RDMADCTL (0x0B) matters more, and reading only RDDPM was a real gap. A
+  night ride produced a mirrored, 180-degree ARRIVED screen, which is MADCTL
+  gaining MX+MY - and DISON and SLPOUT stay perfectly set through that. The
+  watchdog was structurally blind to the exact fault it was written to catch.
+
+  The expected value is captured at boot rather than hardcoded, because it
+  depends on TFT_eSPI's rotation table and the panel's RGB order, and a
+  hardcoded constant would false-positive the moment either changed.
+
+  Three consecutive bad reads before acting: a single garbled read on a
+  marginal bus must not cause a visible re-init.
 */
 static const uint32_t PANEL_CHECK_MS   = 2000;
 static const uint8_t  PANEL_OK_MASK    = 0x14;   // DISON | SLPOUT
 static const uint8_t  PANEL_FAIL_LIMIT = 3;
+static const uint8_t  REG_RDDPM        = 0x0A;
+static const uint8_t  REG_RDMADCTL     = 0x0B;
+static uint8_t        panelMadctlRef   = 0;      // captured at boot
 
 static uint32_t lastPanelCheckMs = 0;
 static uint8_t  panelFailStreak  = 0;
@@ -1084,8 +1099,11 @@ void displayBegin() {
   // Probe read capability while the answer is known. The panel has just been
   // initialised, so it IS on and awake; if the register does not say so, the
   // read path is broken rather than the panel.
-  const uint8_t probe = tft.readcommand8(0x0A);
+  const uint8_t probe = tft.readcommand8(REG_RDDPM);
   panelReadable = ((probe & PANEL_OK_MASK) == PANEL_OK_MASK);
+  // Reference MADCTL, taken while the panel is known good. Everything the
+  // watchdog later calls corruption is a departure from this byte.
+  if (panelReadable) panelMadctlRef = tft.readcommand8(REG_RDMADCTL);
   Serial.printf("display: panel read probe 0x%02X - watchdog %s\n", probe,
                 panelReadable ? "armed" : "DISABLED (MISO not wired)");
 
@@ -1118,6 +1136,43 @@ void displayRender(const NavState& s) {
     const uint16_t clockKey =
         (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
     changed = (clockKey != lastClockKey) || (s.phoneBatteryPct != lastBattery);
+  }
+
+  /*
+    ★ A screen that never repaints can never heal.
+
+    ARRIVED, DISCONNECTED, STALE and REROUTING are drawn once and then sit
+    untouched - ARRIVED for the full 30 s dwell. Every other screen repaints
+    something roughly every second, so a corrupted pixel is overwritten before
+    it can be read.
+
+    That is why the mirrored ARRIVED screen was the one that got photographed.
+    Not because corruption is likelier there - because it is the only place it
+    can SURVIVE. It may well have been happening all along and being scrubbed
+    within a second everywhere else, which means the sighting says nothing
+    about how often it occurs.
+
+    So: re-assert MADCTL and force a repaint on a slow cadence. The rotation
+    call sends a command and one byte and touches no pixels, but the ILI9341
+    datasheet is explicit that MY/MX/MV affect only SUBSEQUENT writes - unlike
+    BGR, which it notes is "active immediately without update the content in
+    Frame Memory again". Re-asserting alone would therefore have fixed nothing
+    on a static screen. It has to be paired with the repaint.
+
+    10 s is a compromise: two repaints across an arrival dwell, which is a
+    visible but brief flash on a screen with no time pressure, against bounding
+    how long any corruption can stand.
+  */
+  static const uint32_t STATIC_REPAINT_MS = 10000;
+  static uint32_t lastStaticPaintMs = 0;
+  const bool staticScreen = (scr == UI_ARRIVED || scr == UI_DISCONNECTED ||
+                             scr == UI_STALE   || scr == UI_REROUTING);
+  if (!staticScreen) {
+    lastStaticPaintMs = millis();          // so entering one does not fire at once
+  } else if (millis() - lastStaticPaintMs >= STATIC_REPAINT_MS) {
+    lastStaticPaintMs = millis();
+    tft.setRotation(ROTATION);
+    changed = true;
   }
 
   const BandContent band = bandFor(s, scr, millis());
@@ -1266,9 +1321,12 @@ void displayTick() {
   if (now - lastPanelCheckMs < PANEL_CHECK_MS) return;
   lastPanelCheckMs = now;
 
-  const uint8_t pm = tft.readcommand8(0x0A);
+  const uint8_t pm = tft.readcommand8(REG_RDDPM);
+  const uint8_t mc = tft.readcommand8(REG_RDMADCTL);
 
-  if ((pm & PANEL_OK_MASK) == PANEL_OK_MASK) {
+  // MADCTL is checked as well as power state, because the fault actually seen
+  // on the road left DISON and SLPOUT both set and only flipped MX and MY.
+  if ((pm & PANEL_OK_MASK) == PANEL_OK_MASK && mc == panelMadctlRef) {
     panelFailStreak = 0;
     return;
   }

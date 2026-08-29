@@ -56,6 +56,12 @@ void setup() {
   delay(200);
   Serial.println(F("\nJiffyTrails navigator — stage 5, BLE link"));
 
+  // Why we last started. A corrupted panel on the road could be a brown-out
+  // reboot rather than a bus glitch, and those want completely different fixes
+  // - a capacitor versus a shorter lead. One line closes the biggest gap in
+  // the evidence for docs/BUG_PANEL_CORRUPTION.md.
+  Serial.printf("boot: reset reason %d\n", (int)esp_reset_reason());
+
   displayBegin();
 
   displayBootBegin();
