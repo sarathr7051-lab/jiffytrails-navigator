@@ -399,12 +399,29 @@ static void drawWrapped(const char* text, int16_t x, int16_t y,
   }
 }
 
-// `scr` decides what "blank" means. The sub-30 m screen is drawn inverted, so
-// clearing the band to C_BG painted a white stripe across the bottom of a black
-// screen - which read as a large empty alert rather than as nothing at all.
+// `scr` decides where a band starts and whether there is one at all. No screen
+// is inverted any more, so every band sits on the normal ground.
 static void drawBand(const NavState& s, BandContent band, UiScreen scr) {
-  const bool inverted = (scr == UI_NAV_NOW);
-  const uint16_t groundBg = inverted ? C_INV_BG : C_BG;
+  /*
+    ★ Turn-now has no band, and this line is why the bands kept coming back.
+
+    It used to read `inverted = (scr == UI_NAV_NOW)`, left over from when that
+    screen flipped the whole panel. Long after the inversion was removed, this
+    was still filling y 190..240 with C_INV_BG - black by day, ~88% white at
+    night. THAT was the band reported from the bike, twice, in both modes, and
+    I kept looking at the turn-now screen itself where nothing was wrong.
+
+    Worse now that the arrow is 184 px and reaches y=212: the fill was cutting
+    the bottom off the glyph. Photographed on a roundabout, whose entry leg
+    simply stopped in mid-air.
+
+    bandFor() returns BAND_BLANK for this screen anyway, and drawChrome has
+    just painted the whole thing, so there is nothing to clear and nowhere to
+    put it. Draw nothing.
+  */
+  if (scr == UI_NAV_NOW) return;
+
+  const uint16_t groundBg = C_BG;
 
   /*
     An alert grows upward into the footer, because for the two seconds it is up
@@ -753,7 +770,7 @@ static void drawChrome(const NavState& s, UiScreen scr) {
 
     case UI_NAV_NOW: {
       /*
-        Under 30 m: framed, not inverted.
+        Under 30 m: nothing is added at all.
 
         This used to flip the whole screen to black. It was chosen because a
         large luminance change is the most blur- and glare-robust signal this
