@@ -117,11 +117,35 @@ static const int16_t GLYPH_FAR_X =  8, GLYPH_FAR_Y = 68,  GLYPH_FAR_S = 84;
 static const int16_t GLYPH_APP_X =  6, GLYPH_APP_Y = 80,  GLYPH_APP_S = 96;
 static const int16_t GLYPH_BIG_X =  4, GLYPH_BIG_Y = 76,  GLYPH_BIG_S = 104;
 
-// The turn-now frame. Must clear the glyph and the distance sprite, or the
-// next distance push paints over the bottom bar and it flickers once per
-// 10 m step - the same trap the geometry box fell into.
-static const int16_t NOW_BAR_H = 14;
-static_assert(NOW_BAR_H <= GLYPH_BIG_Y, "top bar overlaps the turn-now glyph");
+/*
+  The turn-now screen, under 30 m. No bars, no frame, no inversion.
+
+  This screen has been rejected from the bike three times: full inversion read
+  as a fault, white bars at night were a flood, and black bars by day were
+  still "that issue". Three rounds is not a matter of taste to argue with. The
+  common factor was never the colour - it was that CHROME APPEARED, and a
+  rider at a junction reads new furniture as a malfunction.
+
+  So nothing is added. The arrow itself becomes the signal: it grows from 104
+  to 184 px, the road name and the footer are already gone at this range, and
+  the distance shrinks to a corner. Size is the state change, which costs no
+  new element, cannot be mistaken for a fault, and behaves identically day and
+  night because it is not a colour at all.
+
+  It also frees the screen from the distance sprite, which is why the glyph can
+  be 184 wide here against 104 everywhere else - nothing has to fit beside a
+  208 px sprite when the sprite is not used.
+*/
+static const int16_t GLYPH_NOW_X = 6, GLYPH_NOW_Y = 28, GLYPH_NOW_S = 184;
+
+// The distance, small and out of the way. Drawn directly rather than through
+// the sprite: at this range it changes twice, and a 112x52 rect repaint is
+// cheaper and quieter than a 208x80 sprite push.
+static const int16_t NOWD_X = 200, NOWD_Y = 96, NOWD_W = 112, NOWD_H = 52;
+
+static_assert(GLYPH_NOW_X + GLYPH_NOW_S <= NOWD_X, "turn-now glyph hits the distance");
+static_assert(GLYPH_NOW_Y + GLYPH_NOW_S <= H,      "turn-now glyph falls off the screen");
+static_assert(NOWD_X + NOWD_W <= W,                "turn-now distance falls off the screen");
 static_assert(GLYPH_FAR_X + GLYPH_FAR_S <= 108, "far glyph runs under the sprite");
 static_assert(GLYPH_BIG_X + GLYPH_BIG_S <= ARROW_ZONE, "glyph runs under the sprite");
 static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the sprite");
@@ -129,10 +153,6 @@ static_assert(GLYPH_APP_X + GLYPH_APP_S <= ARROW_ZONE, "glyph runs under the spr
 // Sprite origins. SPR_H is 80, so the row centre is DIST_Y + 40.
 static const int16_t DIST_Y_FAR   = 70;   // centre 110, clears the taller footer
 static const int16_t DIST_Y_OTHER = 88;   // centre 128
-
-// The distance sprite must clear the turn-now bottom bar, or every 10 m step
-// repaints over it and the frame flickers.
-static_assert(DIST_Y_OTHER + SPR_H <= H - NOW_BAR_H, "sprite overlaps the turn-now bar");
 
 // Arrow and number must sit on the same centre line, or the row reads as two
 // unrelated objects. Checked here so a future nudge to either cannot drift.
@@ -677,6 +697,34 @@ static void drawNavGlyph(const NavState& s, bool far) {
   else                     drawManeuver(tft, gx, gy, gs, s.maneuver, C_FG, C_BG);
 }
 
+/*
+  The turn-now distance: font 6 rather than font 8, in a corner.
+
+  At 20 m the exact number has almost no value - you are turning, and the arrow
+  is the instruction. It is kept because a number that vanishes at 30 m would
+  itself be a change of state, and this screen exists precisely to stop adding
+  those. It just stops competing with the arrow.
+
+  Its own small rect, repainted alone. The distance changes maybe twice below
+  30 m, and a 112x52 fill is invisible where a full repaint would be a flash.
+*/
+static void drawNowDistance(int32_t m) {
+  tft.fillRect(NOWD_X, NOWD_Y, NOWD_W, NOWD_H, C_BG);
+
+  char num[8];
+  snprintf(num, sizeof(num), "%ld", (long)m);
+
+  const int16_t right = NOWD_X + NOWD_W;
+  const int16_t base  = NOWD_Y + NOWD_H;
+  const int16_t unitW = tft.textWidth("m", 4);
+
+  tft.setTextDatum(BR_DATUM);
+  tft.setTextColor(C_MUTED, C_BG);
+  tft.drawString("m", right, base, 4);
+  tft.setTextColor(C_FG, C_BG);
+  tft.drawString(num, right - unitW - 6, base, 6);
+}
+
 static void drawChrome(const NavState& s, UiScreen scr) {
   switch (scr) {
     case UI_DISCONNECTED:
@@ -728,34 +776,10 @@ static void drawChrome(const NavState& s, UiScreen scr) {
         flooding anything.
       */
       tft.fillScreen(C_BG);
-      /*
-        Amber at night, ink by day - and this is the third time this screen has
-        had to be talked out of flooding a dark-adapted eye.
-
-        Reported from a night ride: the bars come up white at 20 m and 10 m.
-        They do, because C_FG at night is 0xDEFB, ~88% white. Two full-width
-        bars are 8,960 px of near-white - far better than the 76,800 the
-        inversion used to throw, and still the brightest thing on an otherwise
-        dark screen, at a junction, on an unlit road.
-
-        Amber is the right answer rather than merely a dimmer one. It is
-        already this project's single accent for "live / attention", so it
-        introduces no new vocabulary; long-wavelength light costs far less rod
-        adaptation than white at the same apparent brightness; and it survives
-        a dimmed backlight and a tinted visor, which is why the palette notes
-        made it the one colour night mode keeps.
-
-        By day it stays ink: at the measured 1.17:1 sunlight contrast ratio,
-        amber on white is nearly invisible and black is the only thing that
-        works. Colour is never load-bearing on its own here - the bars
-        APPEARING is the signal, and their colour only tunes the cost.
-      */
-      const uint16_t barColour = nightMode ? C_ACCENT : C_FG;
-      tft.fillRect(0, 0,             W, NOW_BAR_H, barColour);
-      tft.fillRect(0, H - NOW_BAR_H, W, NOW_BAR_H, barColour);
-      drawManeuver(tft, GLYPH_BIG_X, GLYPH_BIG_Y, GLYPH_BIG_S, s.maneuver,
+      drawManeuver(tft, GLYPH_NOW_X, GLYPH_NOW_Y, GLYPH_NOW_S, s.maneuver,
                    C_FG, C_BG);
-      if (s.gpsWeak()) drawGpsWeak(false, C_FG, C_BG);
+      drawNowDistance(s.dist_m);
+      if (s.gpsWeak()) drawGpsWeak(true, C_MUTED, C_BG);
       return;
     }
 
@@ -1247,7 +1271,10 @@ void displayRender(const NavState& s) {
 
   // Positive polarity now on every nav screen; the turn-now screen is framed
   // rather than inverted, so nothing here needs the inverted palette.
-  if (scr == UI_NAV_NOW)      pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_FG, C_BG);
+  // Turn-now does not use the sprite at all: its arrow is 184 px wide and
+  // occupies most of the screen, so the distance is drawn directly into its
+  // own small rect instead.
+  if (scr == UI_NAV_NOW)      drawNowDistance(s.dist_m);
   else if (scr == UI_NAV_FAR) pushDistance(s.dist_m, SPR_X, DIST_Y_FAR,   C_FG, C_BG);
   else                        pushDistance(s.dist_m, SPR_X, DIST_Y_OTHER, C_FG, C_BG);
 }
