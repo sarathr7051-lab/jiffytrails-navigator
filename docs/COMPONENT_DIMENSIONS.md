@@ -323,8 +323,6 @@ narrow 2.90 mm border is at the far end. The aperture shifts toward the far end.
 
 ## 2. WEMOS LOLIN32 (ESP32, CH340, LiPo JST)
 
-_status: pending_
-
 ### 2.1 Identification — ★ this is not actually a WEMOS product
 
 The board was bought from Robocraze at ₹449 as **SKU TIFCC0110**, listed as
@@ -508,8 +506,6 @@ receptacle, so size the hole for the **plug**, not the socket.
 
 ## 3. BOBO BM4 mount
 
-_status: pending_
-
 ### 3.1 Ball diameter
 
 **UNKNOWN from any published source. 17 mm is a well-founded guess, not a fact.**
@@ -678,16 +674,258 @@ before anything else.**
 
 ## 4. Perfboard recommendation
 
-_status: pending_
+### 4.1 The space it has to fit in
+
+From §1.2 and `case.scad`'s own derived values:
+
+```
+cavity width   = disp_pcb_w + 2 × inner_clear = 50.0 + 2.4 = 52.4 mm
+cavity length  = disp_pcb_l + 2 × inner_clear = 86.0 + 2.4 = 88.4 mm
+```
+
+Minus the four Ø7 mm screw bosses, which stand in the cavity corners.
+
+**"Beside the display" is not available.** The display module is 50 × 86 mm and
+the cavity is 52.4 × 88.4 mm — the display fills the footprint almost exactly.
+The perfboard must go **behind** it, stacked, which is what makes the depth
+arithmetic in §1.5 and §2.3 binding rather than academic.
+
+### 4.2 Recommended size — 50 × 70 mm
+
+**The standard "5 × 7 cm" board, 18 × 24 holes at 2.54 mm pitch.**
+
+| Check | Result |
+|---|---|
+| Fits the 52.4 × 88.4 mm cavity | ✓ 2.4 mm spare across, 18.4 mm spare along |
+| Clears the corner bosses | ✓ the 18.4 mm of spare length lets it sit clear of one pair |
+| Holds the LOLIN32 (58 × 25.4 mm) | ✓ along the 70 mm axis: 58 mm used, 12 mm spare |
+| Room left beside the LOLIN32 | ✓ **~20 mm × 70 mm** — 8 spare hole columns |
+| Room for the cable gland and drip loop | ✓ the 18.4 mm end gap lines up with `gland_from_end = 22.0` |
+
+That leftover 20 mm strip is not spare capacity, it is exactly where the parts
+`HARDWARE.md` says are still to come must live: the **backlight low-side MOSFET**
+(2N7002 or AO3400, or a BC337), its gate resistor, and the landing pads for the
+nine display wires. Do not choose a smaller board.
+
+**Buying it in India:** Robocraze stock 3×4 inch (₹24) and 6×4 inch (₹39)
+boards ([Vero Boards collection][rcvero]). Either is larger than needed; score
+along a hole line with a craft knife on both faces and snap it over a table
+edge. Do not try to cut it with scissors — it shatters.
+
+[rcvero]: https://robocraze.com/collections/vero-boards
+
+### 4.3 Recommended type — plain perfboard, and specifically NOT stripboard
+
+For a first-time solderer building *this* circuit, the ranking is:
+
+**1st — breadboard-layout proto board ("Perma-Proto" style), if you can get one.**
+The circuit is already working on an MB102 breadboard and the wiring is VERIFIED
+in `HARDWARE.md`. A board with the *same* layout — power rails down the sides,
+five-hole columns, centre gutter — lets you transfer the working circuit
+**hole-for-hole with no re-thinking**. The centre gutter also isolates the
+LOLIN32's two header rows for free. The single biggest source of error in a
+first perfboard build is re-planning a layout that already worked; this
+eliminates it. Harder to find in India and pricier, but worth hunting.
+
+**2nd — plain perfboard (dot matrix, sold locally as "zero PCB" or confusingly
+as "Veroboard").** Every pad is isolated, so every connection is a deliberate
+act. More wires to solder — but this circuit has only about **15 nets**, so
+"more wiring" costs an extra hour, not an extra weekend. Crucially there is **no
+way to create an accidental short**, which matters enormously here: this is a
+sealed, gasketed, RTV-filled enclosure on a motorcycle. A short you cannot see
+is a short you cannot fix.
+
+**3rd, and actively discouraged — stripboard / true Veroboard.** Two specific
+reasons for this build:
+
+- **You would have to cut tracks under the LOLIN32.** Its header rows are about
+  22.86 mm apart (9 × 2.54), so every strip passing beneath the board shorts a
+  left-row pin to its right-row opposite. That is **nine track cuts** that must
+  each be complete, in a place you cannot inspect once the board is populated.
+  A missed cut shorts something to the 3.3 V rail. `HARDWARE.md` already records
+  that the 3.3 V rail is running at 3.18 V with the LDO working rather than
+  coasting — it does not need an extra load fault.
+- **The BOM iron is 60 W.** Stripboard copper lifts when overheated, and lifting
+  a track under a soldered module is effectively unrepairable. Isolated pads on
+  plain perfboard lift too, but a lifted single pad is a one-wire fix.
+
+**A naming trap worth knowing:** in India "Vero Board" and "DOT PCB" are used
+almost interchangeably by retailers, and what usually arrives is the
+**dot-matrix isolated-pad** board, not true copper-strip stripboard. That is the
+one you want here — but **look at the product photograph before ordering**,
+because the name will not tell you.
+
+### 4.4 How to lay it out, given the depth problem
+
+§2.3 shows the depth budget only closes if the LOLIN32 is **not** socketed. So:
+
+- **Solder the LOLIN32 down through male header pins**, plastic side against the
+  perfboard, no female socket. Stack from the perfboard face ≈ **11.7 mm**.
+- Accept that this makes the MCU non-removable. **Flash and fully test the
+  firmware before soldering** — `HARDWARE.md` already requires uploads to go
+  through the Arduino IDE over USB, and the USB port stays accessible through
+  the case wall, so reflashing still works. It is only *replacement* you give up.
+- **Solder the nine display wires directly to the display's pads** (§1.5), and
+  land their other ends on the perfboard. Use stranded wire for anything that
+  crosses between two boards that can move relative to each other; solid core
+  work-hardens and snaps under vibration.
+- **Fit the backlight MOSFET now, not later.** `HARDWARE.md` is explicit:
+  "Decide this before soldering to perfboard in Stage 11 — retrofitting it into
+  a sealed enclosure is the bad version of this job." The 20 mm strip in §4.2
+  exists for it.
 
 ---
 
-## 5. Mapping onto `hardware/case.scad`
+## 5. What could not be found, and how to get it without callipers
 
-_status: pending_
+Listed worst-first. **Silence elsewhere in this document means a number is
+sourced; a number appearing here means it is not.**
+
+### 5.1 ★ Confirming the display's active-area offset — the white-screen photo
+
+**What is unknown:** §1.4 gives the offset chain as VERIFIED for the LCDWIKI
+MSP2806, but that the Robocraze SmartElex is the same board is INFERRED. The
+4.90 mm offset is the number most likely to ruin a print.
+
+**The method, and it is better than callipers, not a poor substitute for them:**
+
+1. **Light the panel white.** `tft.fillScreen(TFT_WHITE)` — one line, and the
+   sketch is already building. Now the active area is *self-illuminating*, and
+   its boundary is unambiguous. This is the whole trick: with an unlit panel you
+   are guessing where the glass ends and where the pixels begin, and those are
+   6.40 mm and 9.30 mm from the edge respectively — the exact confusion that
+   produces a 3 mm error.
+2. Lay the module face-up on **graph paper**, on a flat surface, in even light.
+3. Photograph it **from directly overhead** — phone flat against a clear box
+   lid, or braced on a stack of books. Parallax is the dominant error here; get
+   the camera square and centred, and stand back and zoom rather than moving in
+   close.
+4. **Scale from the PCB, not the header.** The PCB long edge is **86.00 mm** and
+   the short edge **50.00 mm**, both datasheet-verified. Use the 50.00 mm width
+   as the scale — it is a crisp, full-length edge. The 33.02 mm header span
+   works too but its ends are pin centres, which are fuzzier to locate.
+5. Measure, in the photo, from each PCB edge to the edge of the lit rectangle.
+
+**Expected results if the board matches:** 9.30 mm at the far end, 19.10 mm at
+the header end, 3.40 mm on each long side, lit rectangle 43.2 × 57.6 mm.
+
+**Accuracy:** on a 3000 px-wide photo of an 86 mm board, one pixel is about
+0.03 mm, so the limit is squareness and edge judgement, not resolution —
+realistically **±0.5 mm**. That is comfortably good enough to confirm or reject
+a 4.90 mm offset.
+
+**With no image editor:** count graph-paper squares directly. 1 mm paper against
+a 9.3 mm offset is perfectly readable by eye.
+
+**Cross-check that costs nothing:** the two side margins must come out *equal*
+(3.40 mm each) and the two end margins *unequal* (9.30 and 19.10). If your photo
+shows equal end margins, the board is not an MSP2806 and none of §1.4 applies.
+
+### 5.2 The LOLIN32 USB-C cut-out — do not measure it, transfer it
+
+**What is unknown:** the USB-C receptacle's overhang past the PCB edge, and its
+exact height and width above the board (§2.5).
+
+**Method:** do not measure the connector. Print a **throwaway coupon** — a
+1 mm-thick rectangle the size of that wall face with a generous 12 × 5 mm slot —
+and check the actual plug seats through it. Adjust once, then transfer the
+winning numbers into `case.scad`. Two ten-minute prints beat a calliper here,
+because the thing that must fit is the **plug's overmould**, which is far bigger
+than the receptacle and varies between cables.
+
+### 5.3 The BM4 ball — the paper-strip method
+
+Fully described in **§3.1**. Wrap, mark, unwrap, read, divide by π. A 17 mm ball
+reads 53.4 mm of circumference; resolution about ±0.3 mm.
+
+### 5.4 The Garmin lug geometry — unknowable from documentation
+
+**What is unknown:** everything. Garmin publishes no dimensions at all (§3.3),
+so there is no source to consult and no arithmetic to do.
+
+**Method:** `mount_test_plate()` already in `case.scad` is the right instrument —
+a 3 g, four-minute print. But **fix the geometry bug in §3.3 first**, because as
+written it renders a plain tube with no lugs, so printing it currently tests
+nothing. Then print, offer up, adjust one variable, reprint. Three iterations
+will beat any measurement.
+
+### 5.5 LOLIN32 mounting holes — look at the board
+
+**What is unknown:** whether they exist (§2.4). No calliper needed; corner holes
+are visible or they are not. Design assuming **none**.
+
+### 5.6 PCB thicknesses — assume 1.6 mm
+
+Neither board's PCB thickness is published. 1.6 mm is the FR-4 default and is
+what `case.scad` already assumes. **Calliper-free check:** stack ten known
+1.6 mm boards… which you do not have. Better: this tolerance does not matter.
+`inner_clear = 1.2` absorbs ±0.3 mm without complaint. **Leave it alone.**
+
+### 5.7 Summary of what is genuinely unresolved
+
+| Unknown | Section | Does it block printing? |
+|---|---|---|
+| SmartElex == MSP2806 dimensionally | §1.1, §1.4 | **Yes for the lid** — run §5.1 |
+| USB-C overhang and cut-out size | §2.5 | **Yes for the body wall** — run §5.2 |
+| LOLIN32 mounting holes | §2.4 | No — design as if none |
+| BM4 ball diameter | §3.1 | **Yes for the adapter** — run §5.3 |
+| BM4 socket/arm geometry | §3.2 | No — design against the ball instead |
+| Garmin lug dimensions | §3.3 | **Yes for the mount** — and no source exists |
+| Both PCB thicknesses | §1.2, §2.2 | No — 1.6 mm, clearance absorbs it |
+| JST connector height | §2.5 | No — but it may set `mcu_stack`; look at it |
 
 ---
 
-## 6. What could not be found, and how to get it without callipers
+## 6. Mapping onto `hardware/case.scad`
 
-_status: pending_
+Every parameter the brief asked about, with the value this research supports.
+
+| `case.scad` parameter | Current | **Recommended** | Status | Source |
+|---|---|---|---|---|
+| `disp_pcb_l` | 86.0 | **86.0** — no change | VERIFIED | [MSP2807 manual p.2][msp2807], [MSP2806 drawing][size2806] |
+| `disp_pcb_w` | 50.0 | **50.0** — no change | VERIFIED | same |
+| `disp_active_l` | 57.6 | **57.6** — no change | VERIFIED | [MSP2807 manual p.2][msp2807]; independently derived, §1.3 |
+| `disp_active_w` | 43.2 | **43.2** — no change | VERIFIED | same |
+| **`disp_active_off`** | **0.0** | **★ 4.90** | VERIFIED for MSP2806; confirm via §5.1 | [MSP2806 drawing][size2806], §1.4 |
+| `mcu_l` | 58.0 | **58.0** — no change | VERIFIED (vendor of the actual SKU) | [Robocraze TIFCC0110][rclolin] |
+| `mcu_w` | 26.0 | **26.0** — keep the slack | VERIFIED 25 / 25.4, sources differ | [Robocraze][rclolin] 25; [espboards][espb] 25.4 |
+| `mcu_stack` | 14.0 | **14.0** — but only if the MCU is *not* socketed | INFERRED, built up in §2.3 | [Espressif WROOM-32][wroom] + typical parts |
+
+### The one change that matters
+
+```scad
+disp_active_off = 4.90;   // was 0.0
+```
+
+**Sign convention.** In `case.scad` the display's long axis is `y`, and the
+aperture is placed by `translate([0, disp_active_off, -1])`. The active area
+must shift **away from the pin-header end**. The header end is where the wires
+leave, so it is the end with the cable gland — and the gland is placed at
+`-body_l/2 + gland_from_end`, i.e. the **−y** end. Therefore the far end is
+**+y** and the offset is **positive: `+4.90`**.
+
+If you orient the board the other way round when you build it, the sign flips.
+**Check it before printing the lid** — this is a one-character error that scraps
+a print.
+
+### Three further changes this research turned up, outside the requested list
+
+| Where | Issue | Fix |
+|---|---|---|
+| `inner_h` (§2.3) | Uses `disp_pcb_t = 1.6`, the bare PCB, but the display *module* is **4.40 mm** thick. Under-counts the cavity by **2.80 mm**; the lid presses on the glass. | Set `disp_pcb_t = 4.4` (and rename — it is a module thickness), or add 2.8 mm to `inner_h` |
+| `mount_plate()` (§3.3) | Lugs reach r = 11.5, inside the Ø26 plate they union with, so **no lugs render at all** — the part is a plain tube | Reduce `mount_plate_d` to ~18–20, keep `mount_lug_r = 11.5` |
+| `mount_lug_t` (§3.3) | 2.4 mm against the only published indicative range of **1–1.5 mm** | Unresolvable from documentation — print and fit |
+
+### Confidence, honestly stated
+
+- **Display (§1): high.** A dimensioned drawing exists for the exact non-touch
+  SKU, and every figure cross-checks against a second source or against
+  arithmetic. The one open question is whether Robocraze's rebadge is the same
+  board, which §5.1 settles in an afternoon.
+- **LOLIN32 (§2): moderate for the outline, low for everything else.** The board
+  is not a WEMOS product and has no datasheet. 58 mm comes from the vendor of the
+  actual SKU; the stack height is a build-up from published component sizes, not
+  a measurement.
+- **Mount (§3): low, and irreducibly so.** BOBO publishes nothing and Garmin
+  publishes nothing. This section is the one that must be resolved by printing
+  test parts rather than by reading.

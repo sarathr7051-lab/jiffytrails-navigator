@@ -17,9 +17,12 @@
   ---------------------------------------------------------------------------
   ★ TWO THINGS TO DO BEFORE YOU PRINT
 
-  1. MEASURE the three boards with calipers and put the numbers in below. The
-     defaults are typical for these parts, not measured from yours, and a case
-     is the one thing in this project that cannot be fixed in software.
+  1. THE BOARD NUMBERS ARE NOW MEASURED, not assumed - see
+     docs/COMPONENT_DIMENSIONS.md, which traced the display to an LCDWIKI
+     MSP2806 and found a dimensioned drawing. Two of the first version's
+     assumptions were wrong and both would have ruined a print: the module is
+     4.40 mm thick rather than the bare PCB's 1.6, and its glass sits 4.90 mm
+     off centre. Change them only against a better source.
 
   2. DECIDE THE WINDOW. HARDWARE.md flags a real conflict: a polycarbonate
      window with an air gap in front of the panel adds two air/plastic
@@ -45,14 +48,19 @@
 // Display module PCB, the 2.8" ILI9341 carrier
 disp_pcb_w      = 50.0;    // across the short edge
 disp_pcb_l      = 86.0;    // along the long edge
-disp_pcb_t      = 1.6;
+disp_pcb_t      = 4.40;   // ★ MODULE thickness, glass+tape+PCB - NOT the bare
+                           // 1.6 mm PCB. At 1.6 the lid pressed on the glass.
 // Active glass area, centred on the PCB unless you say otherwise
 disp_active_w   = 43.2;
 disp_active_l   = 57.6;
-disp_active_off = 0.0;     // shift of the active area along the long axis
+disp_active_off = 4.90;   // ★ NOT centred. The COG driver eats 8.7 mm of border
+                           // at the header end against 2.9 at the far end, so
+                           // the glass sits 4.90 toward the far end. At 0 the
+                           // aperture crops picture on one side and shows bare
+                           // PCB on the other.
 
 // ESP32 WEMOS LOLIN32
-mcu_w           = 26.0;
+mcu_w           = 25.4;
 mcu_l           = 58.0;
 mcu_stack       = 14.0;    // board + headers + wiring, worst case
 
@@ -89,15 +97,28 @@ boss_d          = 7.0;
 boss_blind_t    = 1.6;     // material left at the bottom of the hole
 
 /* [Mount] */
-// ★ UNVERIFIED. Garmin quarter-turn lug geometry is a de-facto standard and
-// these are the commonly quoted figures, but they are NOT measured from your
-// BOBO BM4 socket. Print mount_test_plate() on its own first - it is a 3 g,
-// four-minute print - and confirm it clicks before committing a whole case.
-mount_plate_d   = 26.0;
-mount_lug_w     = 8.0;
-mount_lug_t     = 2.4;
-mount_lug_r     = 11.5;    // centre to outer face of lug
-mount_boss_h    = 6.0;
+/*
+  ★ NO PRINTED MOUNT. The BM4's own jaws hold the case.
+
+  The plan was a Garmin-style quarter turn. Two findings killed it: the real
+  Garmin interface is TWO tabs at 180 degrees rather than three at 120, and
+  Garmin publishes no dimensions at all - every figure in circulation is
+  somebody's callipers. Printing to an unpublished standard, to hold a device
+  onto a motorcycle at speed, is not a trade worth making.
+
+  The BM4 jaw grip opens 60-90 mm and is what BOBO sells to hold a phone on a
+  bike. The bare case is 57.2 mm across, just under the minimum, so two side
+  pads bring it into range and the whole mount problem disappears: no adapter,
+  no printed lugs, no standard to guess at, nothing new to buy, and it works
+  the day the case comes off the printer.
+
+  It IS a friction joint, which HARDWARE.md rightly warns about - but a sprung
+  one, with rubber jaws and a bottom shelf, already carrying phones on Indian
+  roads. Revisit if it walks loose; the quarter turn can be added later once
+  somebody has measured a real Garmin base.
+*/
+jaw_grip_w      = 63.0;    // outer width across the jaws; their range is 60-90
+jaw_pad_l       = 46.0;    // how far along the length the pads run
 
 /* [Choices] */
 window_mode     = "none";  // "none" or "bonded" - see the header
@@ -211,58 +232,41 @@ module hood() {
                 }
 }
 
-/*
-  Garmin-style 3-lug quarter turn, on the back of the body.
-
-  Quarter turn rather than a clamp screw because a tightened joint holds by
-  friction and engine vibration walks friction joints loose. Three lugs behind
-  solid shoulders is a shear plane - there is nothing to unwind.
-*/
-module mount_plate() {
-    difference() {
-        union() {
-            cylinder(h = mount_boss_h, d = mount_plate_d);
-            for (a = [0, 120, 240]) rotate([0, 0, a])
-                translate([0, 0, mount_boss_h - mount_lug_t])
-                    linear_extrude(mount_lug_t)
-                        polygon([[0,0],
-                                 [mount_lug_r, -mount_lug_w/2],
-                                 [mount_lug_r,  mount_lug_w/2]]);
-        }
-        translate([0, 0, -1]) cylinder(h = mount_boss_h + 2, d = mount_plate_d - 8);
-    }
-}
-
-// Print this ALONE first. 3 g, four minutes, and it tells you whether the lug
-// numbers above are right before you commit two hours to a whole case.
-module mount_test_plate() {
-    difference() {
-        union() {
-            cylinder(h = 3, d = mount_plate_d + 8);
-            translate([0, 0, 3]) mount_plate();
-        }
-        translate([0, 0, -1]) cylinder(h = 2, d = mount_plate_d - 8);
-    }
+// Side pads: bring the case into the BM4 jaw range so no adapter is needed.
+// Rounded so the rubber jaws seat on a curve rather than a corner.
+module jaw_pads() {
+    for (x = [-1, 1])
+        translate([x * (body_w / 2), 0, floor_t + 2])
+            hull() for (y = [-1, 1])
+                translate([0, y * (jaw_pad_l / 2 - 3), 0])
+                    cylinder(h = body_h - lid_t - floor_t - 4,
+                             r = (jaw_grip_w - body_w) / 2);
 }
 
 // ============================================================ LAYOUT
 
 // Set one of these to render a single part for export.
-part = "all";     // "all", "body", "lid", "mount", "mounttest"
+part = "all";     // "all", "body", "lid"
 
 if (part == "all") {
-    body();
-    translate([body_w + 10, 0, 0]) lid();
-    translate([0, body_l + 20, 0]) mount_test_plate();
+    union() { body(); jaw_pads(); }
+    translate([body_w + jaw_grip_w, 0, 0]) lid();
 } else if (part == "body") {
-    union() {
-        body();
-        translate([0, 0, -mount_boss_h]) mount_plate();
-    }
+    union() { body(); jaw_pads(); }
 } else if (part == "lid") {
     lid();
-} else if (part == "mount") {
-    mount_plate();
-} else if (part == "mounttest") {
-    mount_test_plate();
 }
+
+/*
+  ★ PRINT THE BODY FIRST, ON ITS OWN, AND TRY IT IN THE JAWS.
+
+  It is the long print of the two and the only one whose fit is uncertain. If
+  jaw_grip_w is wrong the pads are the only thing that changes, and a second
+  body costs filament rather than the whole assembly.
+
+  Everything else in this file is now driven by measured numbers from
+  docs/COMPONENT_DIMENSIONS.md rather than by assumption - the display module
+  is 4.40 mm thick and its glass sits 4.90 mm off centre, both of which were
+  wrong in the first version and would have produced a lid pressing on the
+  panel and an aperture cropping live picture.
+*/
