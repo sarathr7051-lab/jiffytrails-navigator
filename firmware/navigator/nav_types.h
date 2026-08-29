@@ -35,7 +35,26 @@ enum : uint8_t {
   MV_FLYOVER       = 0x12,   // Maps does not distinguish these — see NAV_DATA.md
   MV_UNDERPASS     = 0x13,
   MV_DESTINATION   = 0x14,
-  MV_FERRY         = 0x15
+  MV_FERRY         = 0x15,
+
+  /*
+    DEPART - "head toward X", the first step of a route.
+
+    Maps draws the SAME chipIcon for this as for continue-straight; NAV_DATA.md
+    records the hash c2a2c91 as "CONTINUE / depart" and it has done since the
+    first ride. One bitmap, two meanings.
+
+    They are not the same instruction. Maps' own banner shows the maneuver at
+    the END of a depart step - so while the notification carried the continue
+    glyph, the phone was showing a right turn onto the road we were heading
+    toward, and the panel drew a confident straight arrow. Reported from a real
+    ride in Kochi; the rider took the correct turn only because he knew it.
+
+    The icon cannot distinguish them, so the phone splits them on the title and
+    falls back to CONTINUE when it cannot. Drawing "you are setting off along
+    this road" is true; drawing "go straight through what is ahead" was not.
+  */
+  MV_DEPART        = 0x16
 };
 
 // 0x20-0x2F reserved for ROUNDABOUT_EXIT_N. Confirmed necessary: roundabout

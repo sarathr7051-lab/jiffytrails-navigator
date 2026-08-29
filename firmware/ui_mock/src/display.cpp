@@ -739,8 +739,31 @@ static void drawChrome(const NavState& s, UiScreen scr) {
         flooding anything.
       */
       tft.fillScreen(C_BG);
-      tft.fillRect(0, 0,        W, NOW_BAR_H, C_FG);
-      tft.fillRect(0, H - NOW_BAR_H, W, NOW_BAR_H, C_FG);
+      /*
+        Amber at night, ink by day - and this is the third time this screen has
+        had to be talked out of flooding a dark-adapted eye.
+
+        Reported from a night ride: the bars come up white at 20 m and 10 m.
+        They do, because C_FG at night is 0xDEFB, ~88% white. Two full-width
+        bars are 8,960 px of near-white - far better than the 76,800 the
+        inversion used to throw, and still the brightest thing on an otherwise
+        dark screen, at a junction, on an unlit road.
+
+        Amber is the right answer rather than merely a dimmer one. It is
+        already this project's single accent for "live / attention", so it
+        introduces no new vocabulary; long-wavelength light costs far less rod
+        adaptation than white at the same apparent brightness; and it survives
+        a dimmed backlight and a tinted visor, which is why the palette notes
+        made it the one colour night mode keeps.
+
+        By day it stays ink: at the measured 1.17:1 sunlight contrast ratio,
+        amber on white is nearly invisible and black is the only thing that
+        works. Colour is never load-bearing on its own here - the bars
+        APPEARING is the signal, and their colour only tunes the cost.
+      */
+      const uint16_t barColour = nightMode ? C_ACCENT : C_FG;
+      tft.fillRect(0, 0,             W, NOW_BAR_H, barColour);
+      tft.fillRect(0, H - NOW_BAR_H, W, NOW_BAR_H, barColour);
       drawManeuver(tft, GLYPH_BIG_X, GLYPH_BIG_Y, GLYPH_BIG_S, s.maneuver,
                    C_FG, C_BG);
       if (s.gpsWeak()) drawGpsWeak(false, C_FG, C_BG);

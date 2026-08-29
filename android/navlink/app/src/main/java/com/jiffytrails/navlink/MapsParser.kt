@@ -179,6 +179,10 @@ class MapsParser(context: Context) {
     private var heldDistM = 0
     private var lastProgressMax = 0
 
+    // Signature of the last logged icon decision, so a steady state logs once
+    // rather than at 1 Hz.
+    private var lastIconSig = ""
+
     private var lastManeuver = -1
     private var lastProbe: String? = null
     private var lastEtaCompare: String? = null
@@ -381,6 +385,31 @@ class MapsParser(context: Context) {
     ): NavUpdate {
         val stripped = RE_DIST_PREFIX.replace(title, "")            // rule 1
         val match = Maneuvers.classify(ctx, icon, title)
+
+        /*
+          Match.via carries the whole answer - "hash=c2a2c91", "fuzzy=X/12b",
+          "res=..." - and until now it was computed, threaded through, read only
+          for match.known, and never logged. A successful fuzzy match logged
+          nothing at all.
+
+          That cost a ride. When the panel showed a straight arrow against a
+          banner showing a turn, there was no way to tell whether the icon had
+          been hash-matched, fuzzy-matched or misclassified, and the existing
+          maneuver log only fires on a CHANGE - so a wrong-but-constant 450 m
+          approach produced exactly one line.
+
+          Keyed on code+via+title so a steady state logs once, not at 1 Hz. The
+          distance is the field that answers the question never yet recorded:
+          at what range chipIcon stops being the depart glyph and becomes the
+          turn.
+        */
+        val iconSig = "${match.code}|${match.via}|$title"
+        if (iconSig != lastIconSig) {
+            lastIconSig = iconSig
+            Log.i(TAG, "ICON ${Mv.name(match.code)} via=${match.via} " +
+                    "d=${parseDistance(primary)}m title=\"$title\" " +
+                    "primary=\"$primary\" secondary=\"$secondary\"")
+        }
         // Rule 2: a packet with no readable distance holds the last one rather
         // than claiming zero. See heldDistM.
         val parsedDist = parseDistance(primary)

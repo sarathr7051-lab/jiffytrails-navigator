@@ -105,6 +105,30 @@ static const GlyphOp G_CONTINUE[] = {
   { OP_END,   0,  0,  0,  0,  0,  0 },
 };
 
+/*
+  DEPART - setting off, not continuing.
+
+  The same head and shaft as CONTINUE, but the shaft starts ABOVE a filled disc
+  rather than at the bottom margin. The disc is you, standing still; the gap is
+  the moment before you move. It reads as "head off from here" at a glance and
+  cannot be mistaken for "go straight through the junction ahead", which is the
+  confusion that put a wrong arrow on the panel in Kochi.
+
+  Deliberately close to CONTINUE rather than a new shape. The instruction IS
+  nearly the same - travel along this road - and the difference the rider needs
+  is that the arrow is NOT promising anything about the junction at the end.
+  A wholly different glyph would overstate the distinction.
+
+  Disc r=10 at (50,84): spans y 74..94, against a shaft foot at 70. The 4-unit
+  gap is the whole message and is one unit of the 4/8/16/32 spacing scale.
+*/
+static const GlyphOp G_DEPART[] = {
+  { OP_RECT, 42, 32, 16, 38,  0,  0 },
+  { OP_TRI,  50,  4, 24, 38, 76, 38 },
+  { OP_CIRC, 50, 84, 10,  0,  0,  0 },
+  { OP_END,   0,  0,  0,  0,  0,  0 },
+};
+
 // ------------------------------------------------------------------- turns
 
 /*
@@ -329,6 +353,7 @@ struct GlyphEntry { uint8_t code; const GlyphOp* ops; bool mirror; };
 
 static const GlyphEntry GLYPHS[] = {
   { MV_CONTINUE,     G_CONTINUE,    false },
+  { MV_DEPART,       G_DEPART,      false },
   { MV_TURN_RIGHT,   G_TURN,        false },
   { MV_TURN_LEFT,    G_TURN,        true  },
   { MV_SHARP_RIGHT,  G_SHARP,       false },

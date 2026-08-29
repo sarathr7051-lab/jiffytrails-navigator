@@ -63,6 +63,13 @@ object Maneuvers {
      */
     private const val AMBIGUOUS_WITHIN = 8
 
+    /**
+     * The absolute floor for a match with no rival to contradict it. 12 of 1024
+     * bits is near-identical; [MAX_DIFF_BITS] at 32 is "close enough when
+     * something else was further away", which is a different question.
+     */
+    private const val SOLO_MAX_DIFF_BITS = 12
+
     /** Runtime-learned signatures are bounded; a stuck classifier must not leak. */
     private const val LEARN_CAP = 64
 
@@ -115,11 +122,16 @@ object Maneuvers {
         "destination" to Mv.DESTINATION,
         "arrive" to Mv.DESTINATION,
         "flag" to Mv.DESTINATION,
-        "depart" to Mv.CONTINUE,
-        "straight" to Mv.CONTINUE,
-        "continue" to Mv.CONTINUE,
+        // Handed entries first: this is an unanchored first-hit scan, so a
+        // hypothetical "ic_continue_right" would classify CONTINUE if these sat
+        // below. Tier 1 is dead today because chipIcon has type=1 and no name,
+        // but it is the tier that survives a Maps redraw, so it should be right
+        // before it is ever needed rather than after.
         "left" to Mv.TURN_LEFT,
         "right" to Mv.TURN_RIGHT,
+        "depart" to Mv.DEPART,
+        "straight" to Mv.CONTINUE,
+        "continue" to Mv.CONTINUE,
     )
 
     /**
@@ -201,7 +213,7 @@ object Maneuvers {
             if (name in IGNORED_NAMES) return Match(Mv.UNKNOWN, "non-maneuver res=$name")
             val hit = BY_NAME.firstOrNull { name.contains(it.first) }
             if (hit != null) {
-                val code = refineRoundabout(hit.second, title)
+                val code = refine(hit.second, title)
                 // Learn the pixels under a name we trust, so tier 3 can carry this
                 // maneuver if the name ever disappears mid-session.
                 learn(code, "res=$name", renderRows(ctx, icon))
@@ -213,13 +225,13 @@ object Maneuvers {
         if (r.hash in IGNORED_HASHES) return Match(Mv.UNKNOWN, "non-maneuver hash=${r.hash}")
 
         BY_HASH[r.hash]?.let { code ->
-            val refined = refineRoundabout(code, title)
+            val refined = refine(code, title)
             learn(refined, "hash=${r.hash}", r.rows)
             return Match(refined, "hash=${r.hash}")
         }
 
         fuzzy(r.rows)?.let { m ->
-            return Match(refineRoundabout(m.code, title), m.via)
+            return Match(refine(m.code, title), m.via)
         }
 
         logUnrecognised(icon, r, name)
@@ -242,6 +254,32 @@ object Maneuvers {
      * one: it is per-notification, where the hash-implied number is whatever a
      * single measured ride happened to be.
      */
+    /** Both title-based refinements, in one place so no call site can miss one. */
+    private fun refine(code: Int, title: String?): Int =
+        refineDepart(refineRoundabout(code, title), title)
+
+    private val RE_DEPART = Regex("""^\s*(head|depart|start)\b""", RegexOption.IGNORE_CASE)
+
+    /**
+     * CONTINUE -> DEPART when the title says we are setting off.
+     *
+     * The icon cannot tell these apart: NAV_DATA.md records `c2a2c91` as
+     * "CONTINUE / depart" and it is one bitmap for both. But Maps' own banner
+     * shows the maneuver at the END of a depart step, so while the notification
+     * carried the continue glyph the phone was showing a right turn onto the
+     * road we were heading toward - and the panel drew a confident straight
+     * arrow. Seen on a real ride; see docs/BUG_MANEUVER_MISMATCH.md.
+     *
+     * English-only, and that is acceptable here for the same reason the
+     * roundabout exit number is: this REFINES an icon match rather than
+     * replacing it. On any other locale the regex misses and the code stays
+     * CONTINUE, which is exactly today's behaviour. It cannot make things worse.
+     */
+    private fun refineDepart(code: Int, title: String?): Int {
+        if (code != Mv.CONTINUE || title.isNullOrEmpty()) return code
+        return if (RE_DEPART.containsMatchIn(title)) Mv.DEPART else code
+    }
+
     private fun refineRoundabout(code: Int, title: String?): Int {
         val isRoundabout = code == Mv.ROUNDABOUT ||
                 code in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15)
@@ -287,7 +325,28 @@ object Maneuvers {
             val d = diff(rows, s.rows)
             if (d < rivalDiff) rivalDiff = d
         }
-        if (rivalDiff - bestDiff < AMBIGUOUS_WITHIN) {
+
+        /*
+          When there IS no rival the margin test cannot fire: rivalDiff stays at
+          Int.MAX_VALUE, the subtraction is huge, and every match passes on
+          bestDiff alone.
+
+          That is not a corner case - it is the normal state for the first part
+          of every ride. refs is cleared whenever the listener reconnects, and
+          CONTINUE is almost always the first maneuver to refill it, so for the
+          opening minutes the set holds exactly one code and the guard this
+          class exists for is switched off.
+
+          A match with nothing to contradict it has to earn it on its own, so it
+          gets a much stricter absolute floor than a contested one.
+        */
+        if (rivalDiff == Int.MAX_VALUE) {
+            if (bestDiff > SOLO_MAX_DIFF_BITS) {
+                Log.w(TAG, "icon ${Mv.name(win.code)} at $bestDiff bits, sole candidate " +
+                        "and over the solo floor of $SOLO_MAX_DIFF_BITS - refusing to guess")
+                return null
+            }
+        } else if (rivalDiff - bestDiff < AMBIGUOUS_WITHIN) {
             Log.w(TAG, "icon ambiguous: ${Mv.name(win.code)} at $bestDiff bits vs a rival " +
                     "at $rivalDiff - refusing to guess")
             return null

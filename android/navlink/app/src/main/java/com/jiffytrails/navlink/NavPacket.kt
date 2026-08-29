@@ -48,6 +48,19 @@ object Mv {
     const val UNDERPASS = 0x13
     const val DESTINATION = 0x14
     const val FERRY = 0x15
+
+    /**
+     * "Head toward X" - the first step of a route.
+     *
+     * Maps draws the SAME chipIcon for this as for continue-straight, and
+     * NAV_DATA.md records the hash c2a2c91 as "CONTINUE / depart". One bitmap,
+     * two meanings, and the icon cannot separate them - only the title can.
+     *
+     * They are not the same instruction: Maps' own banner shows the maneuver at
+     * the END of a depart step, so the panel drew a confident straight arrow
+     * while the phone showed a right turn. See BUG_MANEUVER_MISMATCH.md.
+     */
+    const val DEPART = 0x16
     const val ROUNDABOUT_EXIT_BASE = 0x20
 
     fun roundaboutExit(n: Int): Int =
@@ -64,6 +77,7 @@ object Mv {
         EXIT_LEFT -> "EXIT_LEFT"; EXIT_RIGHT -> "EXIT_RIGHT"
         ROUNDABOUT -> "ROUNDABOUT"; FLYOVER -> "FLYOVER"; UNDERPASS -> "UNDERPASS"
         DESTINATION -> "DESTINATION"; FERRY -> "FERRY"; UNKNOWN -> "UNKNOWN"
+        DEPART -> "DEPART"
         in (ROUNDABOUT_EXIT_BASE + 1)..(ROUNDABOUT_EXIT_BASE + 15) ->
             "ROUNDABOUT_EXIT_${code - ROUNDABOUT_EXIT_BASE}"
         else -> "0x%02X".format(code)
