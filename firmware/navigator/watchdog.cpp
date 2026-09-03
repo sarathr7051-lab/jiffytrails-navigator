@@ -43,6 +43,30 @@ void watchdogTick(NavState& s) {
     s.next_dist_m  = 0;
     s.instruction[0] = 0;
     s.lastNavMs    = millis();
+
+    /*
+      ★ AND THE ALERTS, WHICH WERE THE HALF LEFT BEHIND.
+
+      callState is persistent state with no timestamp - by design, because a
+      ring has to stay on screen until it stops. The phone clears it by sending
+      PKT_CALL with CALL_IDLE, and it only sends PKT_CALL on a state CHANGE.
+
+      So: pull the phone out of a jacket pocket while it is ringing, the link
+      drops mid-ring, and the CALL_IDLE that would have cleared it is sent to
+      nobody. On reconnect bandFor sees callState != CALL_IDLE and floods the
+      whole screen inverted with "CALL / <name>" - a call that is not
+      happening, over the navigation, until the next real call or a power
+      cycle. DISCONNECTED outranking the band hides this only while the link is
+      down; the reconnect is exactly when it surfaces.
+
+      The notification fields are dwell-bounded and so cannot hang the same
+      way, but they are stale by the same argument and go with it: what the
+      restarted freshness clock now vouches for is nothing at all.
+    */
+    s.callState    = CALL_IDLE;
+    s.callName[0]  = 0;
+    s.notifyText[0] = 0;
+    s.notifySrc[0]  = 0;
   }
 
   // While the link is down, DISCONNECTED outranks STALE anyway (see

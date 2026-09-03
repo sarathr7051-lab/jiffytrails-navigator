@@ -750,9 +750,14 @@ static void drawChrome(const NavState& s, UiScreen scr) {
       return;
 
     case UI_STALE:
-      // The spec says dim the screen. The backlight is hardwired to 3V with no
-      // PWM control, so dimming is not available - see HARDWARE.md. Greyed
-      // text is the honest substitute until LED moves to a driven pin.
+      // The spec says dim the screen. That is now genuinely available - the
+      // backlight moved to GPIO 17 under LEDC PWM (backlight.cpp), it is no
+      // longer hardwired to 3V - but display.cpp deliberately does not reach
+      // for it: brightness has exactly one owner, and backlightSetOverride is
+      // already spoken for by the phone's CONFIG byte. A second caller
+      // stamping on it from a render path is the two-sources-of-truth bug
+      // backlight.h warns about by name. Greyed text stays until dimming is
+      // driven from the state machine rather than from here.
       drawBanner("STALE", "no data 10 s", C_BG, C_MUTED);
       return;
 
@@ -834,6 +839,63 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   drawNavGlyph(s, far);
 }
 
+/*
+  ★ gps_weak OWNS A 44 px CORNER, NOT THE SCREEN.
+
+  It is a per-packet flag off the wire, so under a flyover or an underpass it
+  flaps at the packet rate - about 1 Hz. It sat in the whole-screen change key,
+  which meant every flap ran drawChrome: a fillScreen plus a glyph up to 184 px
+  wide, at the junction, once a second, to add or remove a four-character
+  label. The screen flashed; nothing on it changed.
+
+  This is the SIXTH time in this file that a value moving at its own rate has
+  been used as a whole-screen key. The drawsText guard in displayRender was the
+  fifth, geometry was another. The rule the file keeps re-learning: a value
+  that changes on its own schedule gets a redraw scoped to the box it draws in.
+
+  Repainting the label alone is not enough on FAR and APPROACH, though, because
+  the flag ALSO takes GPS_RESERVE_W off the instruction's wrap width. Redrawing
+  only the corner there would leave the road name laid out at the wrong width
+  and the two would overlap - the precise thing the reserve exists to prevent.
+  So those two screens re-lay the whole top strip, and COMMITTED and NOW, which
+  have no text up there, get the bare corner.
+
+  Every region is bounded above the glyph box and the distance sprite, so none
+  of this touches the main row.
+*/
+static const int16_t TOP_STRIP_H  = 60;   // two font-4 lines from y=6
+static const int16_t GPS_CORNER_W = GPS_RESERVE_W + 12;
+static const int16_t GPS_CORNER_H = 24;   // one font-2 label from y=4
+
+static_assert(TOP_STRIP_H  <= GLYPH_FAR_Y, "top strip runs into the far glyph");
+static_assert(TOP_STRIP_H  <= GLYPH_APP_Y, "top strip runs into the approach glyph");
+static_assert(TOP_STRIP_H  <= DIST_Y_FAR,  "top strip runs into the far sprite");
+static_assert(GPS_CORNER_H <= GLYPH_BIG_Y, "gps corner runs into the committed glyph");
+static_assert(GPS_CORNER_H <= GLYPH_NOW_Y, "gps corner runs into the turn-now glyph");
+
+static void drawGpsCorner(const NavState& s, UiScreen scr) {
+  if (scr == UI_NAV_FAR || scr == UI_NAV_APPROACH) {
+    const bool far = (scr == UI_NAV_FAR);
+    tft.fillRect(0, 0, W, TOP_STRIP_H, C_BG);
+
+    const int16_t textY = far ? 6 : 4;
+    int16_t maxW = W - 16;
+    if (s.gpsWeak()) maxW -= GPS_RESERVE_W;
+    if (s.instruction[0]) {
+      drawWrapped(s.instruction, 8, textY, maxW, far ? 2 : 1, C_FG);
+    }
+    if (s.gpsWeak()) drawGpsWeak(true, C_MUTED, C_BG);
+    return;
+  }
+
+  // COMMITTED puts the label top-LEFT, turn-now top-right. Clear whichever
+  // corner this screen uses, then redraw it only if the flag is still set -
+  // the clear is what makes the label go away again.
+  const bool topRight = (scr != UI_NAV_COMMITTED);
+  tft.fillRect(topRight ? W - GPS_CORNER_W : 0, 0, GPS_CORNER_W, GPS_CORNER_H, C_BG);
+  if (s.gpsWeak()) drawGpsWeak(topRight, C_MUTED, C_BG);
+}
+
 // --------------------------------------------------------- panel watchdog
 
 /*
@@ -850,8 +912,10 @@ static void drawChrome(const NavState& s, UiScreen scr) {
   on a motorcycle, where the supply is a 12 V accessory rail and the whole
   assembly is being shaken. So the device asks.
 
-  MISO is NOT wired on this build - see panelReadable below, which detects that
-  at boot and disarms the watchdog. When it IS wired, two registers are read.
+  MISO IS wired on this build - User_Setup.h defines TFT_MISO 19 and it is one
+  of the nine perfboard wires. panelReadable below still gates the watchdog,
+  but it is now a bus-health probe rather than a wiring test. Two registers are
+  read.
 
   RDDPM (0x0A): bit 2 is DISON, bit 4 is SLPOUT. Both set on a healthy panel,
   both clear after an unwanted reset.
@@ -882,24 +946,26 @@ static uint32_t panelRecoveries  = 0;
 /*
   Whether the panel can be READ at all.
 
-  The watchdog asks the panel over MISO whether it is still configured. On this
-  build MISO is not wired - it was removed deliberately, and the panel works
-  perfectly without it, because the display is write-only in normal use.
+  The watchdog asks the panel over MISO whether it is still configured. MISO is
+  wired (TFT_MISO 19), so this probe is about whether the READ PATH works, not
+  whether the wire exists.
 
-  A floating MISO reads back as garbage, which never matches DISON|SLPOUT, so
-  the watchdog scored three failures at 2 s apiece and re-initialised a healthy
-  panel every six seconds. That is a visible full-screen flash, on a device
-  whose entire promise is that what it shows can be trusted.
+  A read that comes back garbage never matches DISON|SLPOUT, so the watchdog
+  scored three failures at 2 s apiece and re-initialised a healthy panel every
+  six seconds. That is a visible full-screen flash, on a device whose entire
+  promise is that what it shows can be trusted.
 
-  So the watchdog now proves it can see before it is allowed to act: it reads
-  the register once at boot, immediately after init, when the panel is KNOWN to
-  be on and awake. If that read does not come back correct, reads are
-  impossible on this wiring and the watchdog disables itself for the session.
+  So the watchdog proves it can see before it is allowed to act: it reads the
+  register once at boot, immediately after init, when the panel is KNOWN to be
+  on and awake. If that read does not come back correct, reads are unreliable
+  on this bus and the watchdog disables itself for the session.
 
-  The failure it was written for - the panel silently losing its configuration
-  while the ESP32 keeps running - is real and was observed. Recovering from it
-  needs MISO. Until that wire goes back, the honest position is no watchdog
-  rather than one that fires at random, and the log says so out loud.
+  ★ The cause was never the wiring. The probe failed because reads were being
+  clocked too fast; User_Setup.h now sets SPI_READ_FREQUENCY to 6 MHz against a
+  27 MHz write clock, and the probe passes. The mechanism that recovers the
+  mirrored-screen fault had been switched off by a number while the comment
+  here blamed a missing wire - so if this probe ever fails again, suspect the
+  bus and the read clock, not the harness.
 */
 static bool     panelReadable    = false;
 
@@ -1143,7 +1209,7 @@ void displayBegin() {
   // watchdog later calls corruption is a departure from this byte.
   if (panelReadable) panelMadctlRef = tft.readcommand8(REG_RDMADCTL);
   Serial.printf("display: panel read probe 0x%02X - watchdog %s\n", probe,
-                panelReadable ? "armed" : "DISABLED (MISO not wired)");
+                panelReadable ? "armed" : "DISABLED (panel read failed)");
 
   dist.setColorDepth(16);
   sprite_ok = (dist.createSprite(SPR_W, SPR_H) != nullptr);
@@ -1172,8 +1238,25 @@ void displayRender(const NavState& s) {
       information, on the one screen whose entire design goal is stillness.
     */
     const bool drawsText = (scr == UI_NAV_FAR || scr == UI_NAV_APPROACH);
-    changed = (s.maneuver != lastManeuver)
-           || (s.gpsWeak() != lastGpsWeak)
+
+    /*
+      ★ And the maneuver is not a whole-screen key on these two either.
+
+      FAR and APPROACH are exactly the screens whose glyph box goes through the
+      targeted drawNavGlyph below - and that box shows junction GEOMETRY when
+      any has arrived, not the arrow. So a maneuver change there was forcing a
+      fillScreen for a value that was not on the screen at all. When there is
+      no geometry the arrow IS the maneuver, so the term is not dropped: it
+      moves into the glyph's own key, where an 84 or 96 px box is repainted
+      instead of 320x240.
+
+      COMMITTED and NOW draw their arrow from drawChrome directly and never
+      reach drawNavGlyph, so for those two the full repaint is still the only
+      thing that can update it.
+
+      gps_weak has left this key entirely - see drawGpsCorner.
+    */
+    changed = (!drawsText && s.maneuver != lastManeuver)
            || (drawsText &&
                strncmp(s.instruction, lastInstruction, INSTRUCTION_MAX) != 0);
   }
@@ -1222,8 +1305,21 @@ void displayRender(const NavState& s) {
   */
   static const uint32_t STATIC_REPAINT_MS = 10000;
   static uint32_t lastStaticPaintMs = 0;
+  /*
+    ★ IDLE WAS MISSING FROM THIS LIST, AND IDLE IS THE ONE THAT MATTERS MOST.
+
+    The four screens above are transient - an arrival dwells 30 s, a reroute
+    resolves. IDLE is where the device sits for most of its powered life, and
+    its only repaint trigger is the clock key just above, which is a constant 0
+    whenever s.clockValid is false. No clock, no repaint, ever: drawn once on
+    entry and then left standing for hours.
+
+    That is the same defect this comment claims was fixed, on the screen with
+    the longest exposure to it, and it was the one screen left out.
+  */
   const bool staticScreen = (scr == UI_ARRIVED || scr == UI_DISCONNECTED ||
-                             scr == UI_STALE   || scr == UI_REROUTING);
+                             scr == UI_STALE   || scr == UI_REROUTING ||
+                             scr == UI_IDLE);
   if (!staticScreen) {
     lastStaticPaintMs = millis();          // so entering one does not fire at once
   } else if (millis() - lastStaticPaintMs >= STATIC_REPAINT_MS) {
@@ -1266,6 +1362,10 @@ void displayRender(const NavState& s) {
     snprintf(lastInstruction, sizeof(lastInstruction), "%s", s.instruction);
     chromeValid  = true;
     lastDist     = -1;               // chrome repaint wiped the number
+    // The heal timer measures time since the last PAINT, not since the last
+    // heal. Without this, an idle screen whose clock ticked would still take a
+    // second full flash a few seconds later for a screen already known good.
+    lastStaticPaintMs = millis();
     lastClockKey = (uint16_t)(s.clockValid ? (s.clockHour * 60 + s.clockMin + 1) : 0);
     // Store the same key the comparison uses, or the two disagree forever and
     // the screen repaints on every tick instead of never.
@@ -1281,8 +1381,22 @@ void displayRender(const NavState& s) {
     solid flicker and at a real 1 Hz feed would be a flash every second.
   */
   if (scr == UI_NAV_FAR || scr == UI_NAV_APPROACH) {
+    // The maneuver rides in this key too, because when no geometry is valid
+    // drawNavGlyph falls back to the arrow - so this box, and only this box,
+    // is what a maneuver change repaints on these two screens.
     const uint32_t gk = geomKey(millis());
-    if (gk != lastGeomKey) { drawNavGlyph(s, scr == UI_NAV_FAR); lastGeomKey = gk; }
+    if (gk != lastGeomKey || s.maneuver != lastManeuver) {
+      drawNavGlyph(s, scr == UI_NAV_FAR);
+      lastGeomKey  = gk;
+      lastManeuver = s.maneuver;
+    }
+  }
+
+  // gps_weak repaints its corner and nothing else. lastGpsWeak is also set on
+  // a full repaint above, so a chrome redraw cannot leave this firing twice.
+  if (navScreen && s.gpsWeak() != lastGpsWeak) {
+    drawGpsCorner(s, scr);
+    lastGpsWeak = s.gpsWeak();
   }
 
   // Idle and arrived: the chrome above has just repainted the screen, so an
@@ -1346,9 +1460,11 @@ void displaySetNight(bool on) {
       lost almost instantly, so every full-white glance on an unlit road costs
       real seeing distance.
 
-      This is a stopgap. The proper answer is PWM on the backlight, which needs
-      a MOSFET (see HARDWARE.md) — and that work is needed on the Sharp Memory
-      LCD path too, where a front light must be dimmable from day one.
+      This is a stopgap. The proper answer is PWM on the backlight — which now
+      exists and needs no MOSFET: the module carries its own S8050 low-side
+      switch and the LED header is a logic input into it (backlight.cpp). It is
+      driven from s.night in backlight.cpp rather than from here, so the text
+      grey below is what this function still owns.
     */
     /*
       Raised from ~70% to ~88% after bench testing at night. The theory said
@@ -1356,9 +1472,10 @@ void displaySetNight(bool on) {
       TN-type ILI9341 whose black level washes out when viewed off-axis from
       above — which is exactly the handlebar viewing angle — so the background
       is never truly black and a 70% grey did not stand far enough off it.
-      Contrast against a grey ground beat absolute light output. The proper fix
-      is still backlight PWM, which lowers both together and would let the text
-      go back down.
+      Contrast against a grey ground beat absolute light output. Backlight PWM
+      lowers both together, which is what would let the text go back down - and
+      it now runs, driven from s.night in backlight.cpp. Whether 88% can be
+      pulled back in its presence is a bench question nobody has re-asked.
     */
     C_BG = TFT_BLACK; C_FG = 0xDEFB;          // ~88% white
     // The alert band still has to be an unmissable luminance event, but a

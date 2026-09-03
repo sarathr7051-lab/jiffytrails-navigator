@@ -18,7 +18,14 @@ use <case.scad>
 // these four - they are for VIEWING ONLY and nothing is printed from them.
 body_w   = 64.4;
 body_l   = 96.4;
-body_h   = 29.8;    // front face to sealing face
+/*
+  *** 34.34, NOT 29.8. *** This file claims its numbers "cannot drift from the
+  real geometry". They drifted by 4.5 mm - which is why the lid has been
+  rendering SUNK INTO the body instead of standing on it, and therefore why
+  this view never showed the spigot interference that would have stopped the
+  lid closing. A checking view calibrated by hand is not a check.
+*/
+body_h   = 34.34;   // front face to sealing face = front_t + cav_d
 lid_t    = 5.0;
 case_h   = body_h + lid_t;
 front_t  = 3.0;

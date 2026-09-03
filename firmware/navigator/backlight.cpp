@@ -10,7 +10,9 @@
   build - and the numbers are already in docs/HARDWARE.md.
 
   IN DAYLIGHT, DIMMING IS NEVER WANTED. The measured contrast in sun is
-  1.17:1 against the 5:1 that readable text needs (HARDWARE.md:194-203). The
+  1.17:1 against the 5:1 that readable text needs (HARDWARE.md, "This panel,
+  this city" - lines 237-249 today; cite the heading, because the line numbers
+  in this citation had already rotted once). The
   panel is already losing to glare by a factor of four. There is no ambient
   level between dawn and dusk where the right answer is anything but maximum.
   An auto-dimmer spends its whole day arriving at the same conclusion.

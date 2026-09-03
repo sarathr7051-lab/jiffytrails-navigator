@@ -23,8 +23,19 @@
 #define TFT_DC    2
 #define TFT_RST  16
 
-// Backlight is tied to 3V3 in hardware for now. When auto-dim
-// is added, move LED to a PWM pin and uncomment these.
+// ---------- Backlight: GPIO 17, and TFT_eSPI must NOT touch it ----------
+//
+// The comment here used to say the backlight was "tied to 3V3 for now".
+// That has been untrue since backlight.cpp went in: it drives GPIO 17
+// itself through the LEDC PWM peripheral (ledcAttach at 20 kHz, 10-bit),
+// so the display's LED pin wires to GPIO 17 and to nothing else.
+//
+// ★ These two defines stay COMMENTED OUT, and not by oversight. Defining
+// TFT_BL makes TFT_eSPI drive the same pin during init, and two owners on
+// one GPIO fight: the library's plain digitalWrite tears down the LEDC
+// channel backlight.cpp attached. Leave them off. The backlight is not
+// TFT_eSPI's job in this build.
+//
 // #define TFT_BL   17
 // #define TFT_BACKLIGHT_ON HIGH
 

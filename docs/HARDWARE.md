@@ -10,8 +10,33 @@
 | Jumper wires | M2M / M2F / F2F, 20 each | 139 |
 | Soldering kit + multimeter | 60 W adjustable, pump, wick, flux, stand | 1,000 |
 
-Later: polycarbonate window, clear RTV, M8 cable gland, M3/M4 fasteners,
-anti-glare film, PETG filament — around ₹840.
+### Still to buy — ★ REWRITTEN 1 Sep 2026, THE OLD LIST BOUGHT THE WRONG PARTS
+
+The line here used to read "polycarbonate window, clear RTV, M8 cable gland,
+M3/M4 fasteners, anti-glare film, PETG filament". **Three of those parts are not
+in the design and three that are were missing.** Against `hardware/case.scad`:
+
+| Part | Detail | Why |
+|---|---|---|
+| **ASA filament, light coloured** | **not PETG, never PLA** | PETG's HDT is 65–80 °C against a sealed interior estimated at 53–70 °C in Bengaluru sun. See the Enclosure section. |
+| **Closed-cell EPDM foam tape, 3 mm** | 4 mm wide, closes to 2 mm = 33% compression | The seal. `foam_w = 4.0`, `foam_d = 2.0`. ★ **Closed-cell, NOT open-cell polyurethane** — most cheap foam tape is open cell and wicks like a sponge. Test it: hold a piece under water and squeeze. Open cell streams bubbles and stays wet. |
+| **M3 self-tapping screws** | **8 × M3 × 12** (lid), **4 × M3 × 8** (mount plate), **2 × M3 × 6** (hood) | ★ The lid's eight must be **PAN head** (DIN 7981, 5.6 × 2.4), not socket cap. A DIN 912 cap is 3.0 mm tall and stands 0.29 mm into the mount plate's dovetail slot, jamming the adapter. ★ The mount plate's four are **× 8, not × 12** — an M3 × 12 bottoms out before the plate is tight and carries no preload at all. |
+| **M3 brass heat-set insert** | 1, for the mount adapter | The BM4's screw runs socket → plate into a brass insert, so our part carries the female thread. `MOUNT_INTERFACE.md` §3. ★ **Not for the case** — `case.scad` rejects inserts there: they need a 4.0 mm bore and 1.6 mm of wall either side, costing 2.4 mm of envelope in both directions, and eight iron-driven insertions into a part that cannot be reprinted. |
+| **ePTFE membrane, Ø6 vent** | can be cut from an old rain jacket | Free |
+| **Potting compound** | clear RTV or epoxy, for the cable entry | ★ **No cable gland.** See below. |
+| Anti-glare film | cut from a phone screen protector | Sunlight section |
+
+**Deleted, and do not buy:**
+
+- **M8 cable gland** — ★ the entry is **potted**. An M8 gland's Ø14 locknut needs
+  16 mm of clear flat wall on the inside, in a position this case does not have.
+- **Polycarbonate window** — ★ **there is no separate window.** The front is
+  closed and the panel is bonded behind it; `bezel()` does the precise work. A
+  window with an air gap in front of the panel is also the wrong answer
+  optically — see the Enclosure section.
+- **M4 fasteners** — nothing in `case.scad` uses M4. The M4-minimum rule in
+  `mount.scad` governs a joint clamped by head pressure on ASA, which is the
+  mount bolt, not the case screws.
 
 **Deliberately excluded:** GPS module, magnetometer, vibration motors, internal
 battery. Reasons in PROJECT_STATE.md.
@@ -31,9 +56,18 @@ correctly through all rotations on this wiring.
 | SDI (MOSI) | GPIO 23 |
 | SCK | GPIO 18 |
 | SDO (MISO) | GPIO 19 |
-| LED | 3V |
+| LED | **GPIO 17** |
 
 ### Gotchas
+
+**★ LED goes to GPIO 17, NOT to 3V3.** This table said `3V` until 29 Aug 2026
+and it was wrong - `backlight.cpp` has owned GPIO 17 through the LEDC PWM
+peripheral since the day/night dimming went in. Wiring LED to 3V3 leaves the
+backlight stuck at full brightness with no dimming. Wiring it to BOTH - which
+is what someone following the old table *and* the firmware would do - shorts
+3V3 to ground through GPIO 17 every time the firmware dims, and that damages
+the pin. One wire, to GPIO 17.
+
 
 **RESET is GPIO 16, not 4.** GPIO 4 is not broken out on the LOLIN32. Most
 ILI9341 tutorials say 4, and following them gives you a white screen.
@@ -48,16 +82,19 @@ lit** (22 Aug 2026, DT-830D on DCV 20). A 4 % droop off nominal — fine, but
 that is the LDO working rather than coasting. Re-measure if anything else is
 ever added to the 3.3 V rail.
 
-### ★ Backlight control is not wired for, and it needs to be
+### ★ Backlight control — GPIO 17, PWM, and NO EXTERNAL TRANSISTOR
 
-`LED` is tied straight to `3V`. The backlight is therefore always on at full
-brightness, which blocks two things already in the plan:
+★ This section used to open "`LED` is tied straight to `3V`, the backlight is
+therefore always on at full brightness". **Both halves are stale.**
+`backlight.cpp` has driven GPIO 17 through the LEDC PWM peripheral (20 kHz,
+10-bit) since day/night dimming went in, and the pin table above is the wiring.
 
-- **"Dim screen on STALE"** (`BLE_PROTOCOL.md` display rules) — needs PWM.
-- **Stage 9 auto-dim** via LDR or BH1750 — needs PWM.
-
-`User_Setup.h` already reserves `TFT_BL 17` and `TFT_BACKLIGHT_ON HIGH`,
-commented out, for when this changes.
+★ It also said `User_Setup.h` "reserves `TFT_BL 17` and `TFT_BACKLIGHT_ON HIGH`,
+commented out, for when this changes". **Those two defines must STAY commented
+out, and not by oversight.** Defining `TFT_BL` makes TFT_eSPI drive the same pin
+during init, and two owners on one GPIO fight: the library's plain
+`digitalWrite` tears down the LEDC channel `backlight.cpp` attached. The
+backlight is not TFT_eSPI's job in this build.
 
 **★ CORRECTED 29 Aug 2026 — no external switch is needed. The module already
 has one.**
@@ -127,12 +164,36 @@ and an MB102 do not hold 40 MHz cleanly. Worth raising again once the build is
 soldered — but retest, do not assume.
 
 Worth knowing why 27 is a sensible fallback rather than an arbitrary one:
-**27 MHz is TFT_eSPI's documented ceiling for *reading pixels back* from the
-display**, not for writing. For write-only rendering the library's own guidance
-is that "40MHz seems to be OK with ILI9341 displays", with 80 MHz the point
-where the controller starts failing. Since this project never calls
-`readPixel`, 40 MHz should be reachable once the wiring is soldered — and that
-is **48% more bandwidth**, which matters directly for any moving graphics.
+**27 MHz is TFT_eSPI's documented ceiling for *reading back* from the display**,
+not for writing. For write-only rendering the library's own guidance is that
+"40MHz seems to be OK with ILI9341 displays", with 80 MHz the point where the
+controller starts failing. So 40 MHz should be reachable once the wiring is
+soldered — **48% more bandwidth**, which matters directly for moving graphics.
+
+★ **CORRECTED — THE FIRMWARE DOES READ THE PANEL, AND READS HAVE THEIR OWN
+CLOCK.** The reasoning above used to close with "since this project never calls
+`readPixel`". That is no longer true. `display.cpp` runs a boot probe
+(`panelReadable`) and re-reads `MADCTL` twice every two seconds; **that watchdog
+is the one mechanism that can recover the mirrored-screen fault**, and it
+disarms itself if the reads come back as garbage.
+
+Reads and writes are separately clocked, which is what makes raising the write
+clock safe:
+
+```
+User_Setup.h    SPI_FREQUENCY       27000000   writes  <- raise this to 40 MHz
+                SPI_READ_FREQUENCY   6000000   reads   <- LEAVE THIS ALONE
+```
+
+**6 MHz, not 20.** MISO is wired, yet at 20 MHz the boot probe kept returning
+garbage and disarming the watchdog — so the recovery mechanism was switched off
+by a number, not by a missing wire. Reads happen twice every two seconds and
+their speed is worth nothing.
+
+**Check the boot line before and after any SPI change.** If it says "watchdog
+armed", the watchdog is real and a corrupted MADCTL heals itself within six
+seconds instead of persisting until a power cycle. If it says "DISABLED", the
+read clock is too fast or MISO is not connected.
 
 For reference, a 320×240 RGB565 frame is 153,600 bytes = 1,228,800 bits:
 
@@ -306,50 +367,136 @@ lever matters as much as the panel.
 
 ## Mount
 
-Reuses a **BOBO BM4** phone mount: handlebar clamp → 17 mm ball → socket bracket.
-The copper jaw plate (the part that broke) is discarded and replaced with a
-printed adapter presenting a 3-lug Garmin-style quarter-turn.
+Reuses a **BOBO BM4** phone mount: handlebar clamp → **Ø17 mm ball** (VERIFIED)
+→ collet + collar → socket → phone plate.
 
-Quarter-turn rather than a clamp screw because a tightened joint holds by
-friction, and engine vibration walks friction joints loose. Three lugs behind
-solid shoulders is a shear plane — nothing to unwind.
+★ **THE JAW BROKE. THE PLATE DID NOT.** This section used to say "the copper jaw
+plate (the part that broke) is discarded". Only the **jaw** — the sprung grip
+that holds a phone — failed, and the jaw is not used here. **The plate is
+undamaged and is kept**: it is the measurement reference for the interface, and
+the fallback if a printed part disappoints.
+
+★ **THE MOUNT IS NOT METAL.** The socket and the plate are both polymer. **The
+only metal in the whole mount is one ISO 10642 M3 × 10 countersunk screw.**
+
+The printed adapter takes the plate's place in the stack, which means it has to
+reproduce the plate's own interface to the socket:
+
+- a **square key**, 14.0 mm across flats, 18.0 corner to corner, 2.17 mm corner
+  radius, seating in a 2.0 mm recess — and the boss must be **shorter** than the
+  recess (about 1.8 mm) so our flat face seats on the socket's flat face;
+- an **M3 brass heat-set insert** on the centre line. The screw runs socket →
+  plate, so **our part carries the female thread.** This withdraws the earlier
+  project rule "no thread in printed plastic" — a brass insert is what BOBO
+  themselves did, for the same reason;
+- **no 90° countersink** — the screw head lands on the socket, not on us.
+
+Full measurements and the reasoning: **`docs/MOUNT_INTERFACE.md`**, which
+supersedes `COMPONENT_DIMENSIONS.md` §3 and the narrative in
+`hardware/mount.scad`.
+
+★ **The "3-lug Garmin-style quarter-turn" this section used to specify is
+gone.** The case-to-mount joint is a **dovetail** (`hardware/dovetail.scad`,
+included by both `case.scad` and `mount.scad`) with a locking pin. The
+vibration argument that chose a quarter-turn over a clamp screw still holds and
+the dovetail satisfies it — a shear plane with nothing to unwind — but nothing
+here is Garmin-compatible and the word should not be used.
+
+★ **Two claims still in `hardware/mount.scad` are refuted** by the measured
+part: that the plate joint is a **Hirth coupling** (it is a plain rounded square
+key — no teeth anywhere), and that the moment arm is "BM4 **arm** + plate +
+adapter = 11.0 mm". The standard BM4 has no arm; the unit attaches directly to
+the ball, so that number needs re-deriving.
 
 ## Enclosure
 
-Roughly 94 × 58 × 20 mm, landscape.
+★ **REWRITTEN 1 Sep 2026. EVERYTHING THIS SECTION USED TO SAY DESCRIBED THE
+ABANDONED FRONT-OPENING CASE** — "94 × 58 × 20 mm", an RTV gasket groove, a
+Ø3 vent, a bonded polycarbonate window, 4 perimeters, a cable gland, and a print
+orientation that is **the opposite of the one now required**. `hardware/case.scad`
+is the authority.
 
-- **ASA, not PETG.** Updated 26 Aug 2026 — PETG is no longer good enough here.
-  PLA softens near 55 °C, but **PETG's HDT is only 65–80 °C and its Tg 75–85 °C**,
-  which sits inside the estimated sealed-enclosure interior of 53–70 °C in
-  Bengaluru sun. ASA gives ~105 °C service, better UV stability, and does not
-  yellow. Print it light-coloured: an 18 °C interior difference has been measured
+**The case opens at the BACK.** The previous version was a tub facing the rider
+with the lid carrying the window and the hood, and the sealing line ran right
+around the display glass — the most crowded, least forgiving line on the part.
+Turning it round dissolved five separate failures rather than solving them: the
+screw bosses that stood inside the display's footprint, a gasket groove with no
+inner wall, an unsealed window, a lid that could not clamp a gasket across an
+82 mm span on four corner screws, and **the USB hole in a sealed wall**.
+
+    THE FRONT IS CLOSED FOR GOOD, with the panel bonded behind it.
+    THE BACK IS THE LID — a plain plate. No window, no hood, nothing to align.
+
+**USB is reached by taking the back off.** There is no port opening.
+
+### Size and print settings
+
+**64.4 × 96.4 × 39.34 mm.** (`body_w` × `body_l` × overall.)
+
+- **ASA, light coloured. Not PETG and never PLA.** PLA softens near 55 °C, and
+  **PETG's HDT is only 65–80 °C, its Tg 75–85 °C** — inside the estimated sealed
+  interior of 53–70 °C in Bengaluru sun. ASA gives ~105 °C service, better UV
+  stability, and does not yellow. An 18 °C interior difference has been measured
   between otherwise identical dark-grey and light-grey enclosures.
+- **0.2 mm layers, 5 perimeters** — four is the usual watertight threshold and a
+  sealed case earns the fifth. ★ This said **4** and cited "the lugs carry all
+  the load"; there are no lugs.
+- **30–40% infill.**
+- **ENCLOSURE OR DRAFT SHIELD MANDATORY.** ASA delaminating mid-print on a
+  100 mm part in a draught is the likeliest way to lose the one print available.
 
-  **The display is the real thermal limit, not the case and not the battery.**
-  2.8" ILI9341 modules are rated **operating −20 to +70 °C**, and solar radiation
-  raises display surface temperature **40–50 °C above ambient**. A documented
-  case had a 50 °C-rated panel reach **90 °C in sun and black out completely**,
-  with repeated exposure leaving permanent "solar clearing" spots. A quick-release
-  mount so the unit comes off when parked is a legitimate engineering answer —
-  it is effectively what Beeline ships.
-- **Form-in-place gasket** — a 2 × 1.5 mm groove filled with clear RTV and cured
-  with the case closed over cling film. Perfect match for about ₹30.
-- **Window** — 2 mm polycarbonate bonded to the *inside* of the bezel, so water
-  pressure seats it rather than lifting it.
+### ★ ORIENTATION — THE OLD LINE HERE WAS BACKWARDS AND WOULD HAVE COST THE PRINT
 
-  **⚠ This conflicts with sunlight readability as currently drawn.** A window
-  with an air gap in front of the panel adds two more air/plastic interfaces at
-  ~4% reflection each. Published figures: air-gap stacks lose **8–20%** of light
-  to reflections, optically bonded stacks **under 5%**. On a 250-nit panel
-  already losing to glare, that gap is unaffordable.
+The deleted instruction read **"body mount-face down; lid sealing-face down,
+hood up"**. There is no mount face on the body any more and no hood on the lid.
 
-  Either **omit the separate window** and seal against the panel's own glass, or
-  **optically bond** the polycarbonate to the panel with clear optical silicone
-  or UV adhesive so there is no air layer. Decide this before printing — see the
-  sunlight section above.
-- **Sunshade hood, 25–35 mm, matte black, ribbed inside.** Not cosmetic. Per the
-  arithmetic above this is the largest single readability gain available, worth
-  more than any backlight change.
+| Part | Orientation |
+|---|---|
+| **body** | **FRONT FACE DOWN.** Puts the sealing rim on top, where it prints accurately with no elephant's foot, and the flange flares outward going up at 45° so it is self-supporting. **5 mm brim** — the first layer is a picture frame and adhesion is not optional. |
+| **lid** | **OUTER FACE DOWN — but decide this at the printer.** ★ The "solid 64 × 100 first layer" that used to justify it does not exist: the plate is 64.4 × 96.4 and the mount plate's keying recess is cut 1.0 mm into that very face over 56.4 × 88.4. So the first five layers are a 4 mm picture frame and the sixth has to bridge the whole 56 × 88 opening, unsupported. Nothing in the geometry depends on the answer. |
+| bezel, hood, mount plate | flat, trivial |
+
+### Sealing, venting and cable entry
+
+- **★ CLOSED-CELL EPDM FOAM TAPE, NOT AN RTV GROOVE AND NOT AN O-CORD.** 3 mm
+  tape closing to 2 mm is 33% compression with a ±0.5 mm usable band. An O-cord
+  at 25% squeeze has a ±0.15 mm band — and an ASA part this size **bows
+  0.3–0.8 mm as it cools**, so the gasket would be defeated by warp alone before
+  it ever met water. Foam also drops the closing force to ~5 N per screw, which
+  is what makes self-tapping screws viable. **Buy closed-cell: most cheap foam
+  tape is open-cell and wicks like a sponge.**
+- **★ ePTFE pressure vent, Ø6 MINIMUM — not Ø3.** The part most DIY builds omit.
+  A sealed box in the sun reaches 60 °C+; cold rain contracts the air and pulls
+  water past the seal. Ø3 does not equalise fast enough on a 60-second quench.
+  Membrane can be cut from an old rain jacket, bonded to a Ø12 recessed land.
+- **★ POTTED CABLE ENTRY, NOT A GLAND.** An M8 gland's Ø14 locknut needs 16 mm
+  of clear flat wall inside, in a position this case does not have — which is
+  why the old design's gland never worked out. Drip loop below, as before.
+- **Blind screw bosses**, bottoming in solid ASA, so no fastener ever breaches
+  the sealed volume. That is what makes it safe to run the eight lid screws
+  straight through the foam band.
+- **★ NO SEPARATE WINDOW.** The front is closed and the panel is bonded behind
+  it; `bezel()` cuts the aperture. This is also the optically correct answer: a
+  window with an air gap in front of the panel adds two more air/plastic
+  interfaces at ~4% reflection each, and air-gap stacks lose **8–20%** of light
+  against **under 5%** for optically bonded ones. On a 250-nit panel already
+  losing to glare, that gap was unaffordable.
+
+### The display is the real thermal limit, not the case and not the battery
+
+2.8" ILI9341 modules are rated **operating −20 to +70 °C**, and solar radiation
+raises display surface temperature **40–50 °C above ambient**. A documented case
+had a 50 °C-rated panel reach **90 °C in sun and black out completely**, with
+repeated exposure leaving permanent "solar clearing" spots. **A quick-release
+mount so the unit comes off when parked is a legitimate engineering answer** —
+it is effectively what Beeline ships, and the dovetail provides it.
+
+### Hood and mounting angle
+
+- **Sunshade hood, 30 mm deep, matte black, 5 ribs inside.** Not cosmetic. Per
+  the sunlight arithmetic above this is the largest single readability gain
+  available, worth more than any backlight change. Bolt-on, two M3 × 6 into
+  blind pilots in pads on the body's sides.
 - **MOUNTING ANGLE IS THE SECOND-LARGEST GAIN, AND IT IS FREE.** Rider test,
   29 Aug 2026, in real daylight: *"keep it straight up, I'm not able to see
   clearly, but if I adjust the angle I'm able to see it properly."*
@@ -364,26 +511,9 @@ Roughly 94 × 58 × 20 mm, landscape.
   Two consequences for the build:
     - The ball joint is not a convenience. It is the adjustment that makes this
       panel usable in sun, and any mount that gives it up is the wrong mount.
-      The quarter turn sets only which way is up — never the angle.
-    - `hood_rake` assumes a near-vertical screen. Once the rider settles on an
-      angle, it wants setting to match, or the hood shades the wrong part of
-      the sky.
-- **Cable gland on the bottom face**, with a drip loop below.
-- **ePTFE pressure vent, Ø3 mm.** The part most DIY builds omit. A sealed box in
-  the sun reaches 60 °C+; cold rain contracts the air and pulls water past the
-  gasket. Membrane can be cut from an old rain jacket.
-- Blind screw bosses so fasteners never breach the sealed volume.
-
-Print settings: 0.2 mm layers, **4 perimeters** (the lugs carry all the load),
-30–40 % infill.
-
-**Orientation: body mount-face down; lid sealing-face down, hood up.** This
-line previously said "sealing face flat on the bed", which is backwards for the
-body and loses the print — that orientation gives a 282 mm picture-frame first
-layer of only ~338 mm² on a part that shrinks 0.5 %, and asks the tub floor to
-bridge 52 × 88 mm of open air. Mount-face down gives a full 57 × 93 mm first
-layer and prints the sealing rim as the top face, where it comes out accurate
-and free of elephant's foot.
+      The dovetail sets only which way is up — never the angle.
+    - **`hood_rake = 12` is provisional.** Once the rider settles on an angle it
+      wants setting to match, or the hood shades the wrong part of the sky.
 
 Drawings in `hardware/mount-design.html`.
 

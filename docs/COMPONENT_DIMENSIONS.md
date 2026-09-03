@@ -16,8 +16,10 @@ Research compiled 29 Aug 2026 so the enclosure can be designed without callipers
 
 ## ★★ STOP — THE BOARD IN HAND IS PROBABLY NOT THE MSP2806
 
-Added 29 Aug 2026. **Nothing in section 1 may be used to commit a print until
-the photographs in section 5 have been taken.**
+★ **RESOLVED 29 Aug 2026 — the board was measured, and the doubt below was
+justified.** The section immediately after this one carries the rider's own
+figures. **They win over every drawing figure in section 1.** This block is kept
+because it is what made the measuring happen, not because it is still open.
 
 Almost every display dimension in this document was read off the LCDWIKI
 MSP2806 drawing. That was the right source to find, and the numbers in it are
@@ -30,20 +32,16 @@ purchased (PCB marking `4484516A_Y7475_241108`) shows **a different PCB**:
 | Card socket | mid-board, straddling 32–61 mm | **far end, near a corner** |
 | SD header | centred on the far edge | **at a corner** |
 
-The consequence that matters is §1.4. The active area's **4.90 mm offset toward
-the far end is not a styling choice — on the MSP2806 it is forced**, because the
+The consequence that mattered was §1.4. The active area's 4.90 mm offset toward
+the far end is not a styling choice — on the MSP2806 it is forced, because the
 FPC is bonded along the header edge and the glass physically cannot sit there.
 Put the FPC on a ZIF connector fed through a slot instead and that constraint
-disappears: the panel is free to sit anywhere along the 86 mm axis.
+disappears: the panel is free to sit anywhere along the long axis.
 
-The offset may still be 4.90 mm. There is no longer any evidence that it is.
-
-**So §5.1's lit-white-screen photograph is no longer a confirmation step. It is
-the only source.** The lid aperture is the least forgiving feature on the case —
-it is cut to the active area with no tolerance, and getting it wrong crops live
-picture on one side while showing bare PCB on the other. That is precisely the
-failure the 4.90 mm figure was found to prevent, and it returns in full if the
-number is carried over from the wrong board.
+★ **And it did sit somewhere else. The lit-screen measurement returned 3.5 mm,
+and the board is 82 mm long, not 86.** Both figures are in the next section. The
+prediction this block made — that a number carried over from the wrong board
+would be wrong — is confirmed on two dimensions at once.
 
 The listing also mixes at least two revisions across its three photos — one with
 bare header holes, one with a 14-pin header fitted. It cannot be trusted for
@@ -181,19 +179,23 @@ to run before printing.**
 
 | Dimension | Value | Status |
 |---|---|---|
-| PCB length (long edge) | **86.0 mm** | VERIFIED — "Module PCB Size 50.0x86.0 (mm)", [MSP2807 manual p.2][msp2807]; same figure on [LCD wiki][lcdwiki2807] |
-| PCB width (short edge) | **50.0 mm** | VERIFIED — same source |
-| PCB thickness | **1.6 mm** | INFERRED — not published. 1.6 mm is the default FR-4 thickness for this class of module and what `case.scad` already assumes. Treat as ±0.2 mm. |
+| PCB length (long edge) | **82.0 mm** | ★ **MEASURED** — see the MEASURED section above. The drawing's "Module PCB Size 50.0x86.0 (mm)" ([MSP2807 manual p.2][msp2807], [LCD wiki][lcdwiki2807]) describes a **different board**. |
+| PCB width (short edge) | **50.0 mm** | VERIFIED twice — drawing, and the rider's rule on this board. The two agree. |
+| PCB thickness | **1.6 mm** | INFERRED — not published. 1.6 mm is the default FR-4 thickness for this class of module. Treat as ±0.2 mm. |
+| Module thickness, glass to PCB back | **5.0 mm** | MEASURED. The drawing says 4.40; the larger measured figure is the one used. |
+| Frame proud of the PCB edge | **0.35 mm** per side | MEASURED. Module is 50.7 mm at its widest. |
 | Module weight | ~25 g | VERIFIED — [MSP2807 manual p.3][msp2807] |
 
-`case.scad` currently has `disp_pcb_w = 50.0`, `disp_pcb_l = 86.0`,
-`disp_pcb_t = 1.6`. **All three are correct** — the outline pair is confirmed by
-datasheet, the thickness is a reasonable standing assumption.
+★ **THE 86.0 FIGURE IS DEAD. `case.scad` has `disp_pcb_l = 82.0`** (with the
+cross-check written out at the parameter: 70 mm white frame, centred, 6 mm of
+board each end). It is the number the body and the lid — the expensive prints —
+are built from, so every downstream sum in this document uses 82.0. Anything
+still quoting 86 is 4 mm out.
 
-Note the enclosure sizing consequence: `HARDWARE.md` describes the case as
-"roughly 94 × 58 × 20 mm". An 86 × 50 board plus 1.2 mm clearance plus 2.4 mm
-walls gives 93.2 × 57.2 mm, so that estimate was already right and needs no
-revision.
+Enclosure sizing consequence: the finished case is **64.4 × 96.4 × 39.34 mm**
+(`case.scad`, `body_w` / `body_l` / rendered height). `HARDWARE.md`'s old
+"roughly 94 × 58 × 20 mm" described the abandoned front-opening case and is
+gone.
 
 ### 1.3 Active display area
 
@@ -235,7 +237,13 @@ figure derived from the nominal 2.8 inches.** This is exactly the trap the
 
 ---
 
-### 1.4 Active area position relative to the PCB — ★ THE ANSWER, AND IT IS NOT ZERO
+### 1.4 Active area position relative to the PCB — ★ SUPERSEDED BY MEASUREMENT
+
+> ★ **The answer is `disp_active_off = 3.5 mm`, measured on the lit panel, and
+> that is what `case.scad` has.** Everything below is the MSP2806 drawing's
+> chain, which produced 4.90. It is kept for one reason only: it explains *why*
+> a 12-o'clock panel has an off-centre aperture at all, which is what stops
+> someone "correcting" 3.5 back to zero. **Do not take a number out of it.**
 
 **LCDWIKI publishes a dimensioned mechanical drawing for the exact non-touch
 SKU.** It is not linked from any product listing, only from the downloads block
@@ -300,14 +308,17 @@ PCB centre                       = 86.00 / 2      = 43.00 mm
 offset                           = 43.00 − 38.10  =  4.90 mm
 ```
 
-> ### ★ `case.scad` has `disp_active_off = 0.0`. That is wrong by 4.90 mm.
+> ### ★ That 4.90 belongs to the MSP2806, not to the board on the desk.
 >
-> This is the most consequential number in this document. Printing the lid as
-> currently parameterised puts the aperture 4.90 mm off along the long axis.
-> The glass bezel is only **2.90 mm** wide at the far end (9.30 − 6.40), so a
-> 4.90 mm error does not merely look off-centre — **it crops roughly 4.9 mm off
-> one end of the live picture and exposes bare PCB at the other.**
-> Set `disp_active_off = 4.90` (sign per §5).
+> `case.scad` has **`disp_active_off = 3.5`**, measured. The chain above is
+> internally consistent and still wrong for this build, which is the whole
+> lesson: a verified number from the wrong drawing reads exactly like a
+> verified number from the right one.
+>
+> The stake is unchanged — the aperture is cut to the active area, so an error
+> crops live picture at one end and shows bare PCB at the other. What changed
+> is that the aperture now lives in `bezel()`, a 5 g part that reprints in
+> eight minutes, so this number can no longer scrap the case.
 
 #### Why the offset exists, and why it points that way
 
@@ -331,10 +342,12 @@ border must be at the header end**, because that is where the driver is.
 #### The residual doubt, and the check that closes it
 
 The chain above is verified for the **LCDWIKI MSP2806**. That the Robocraze
-SmartElex is dimensionally identical is **inferred** (§1.1), not proven —
-Robocraze publishes nothing. Before committing a lid print, run the
-calliper-free check in **§6.1**, which resolves the offset to about ±0.5 mm from
-a photograph. Or just print `lid()` on its own first and offer it up.
+SmartElex is dimensionally identical was **inferred** (§1.1) and has since been
+**disproved** — different length, different offset, different FPC route. The
+check that settled it is §5.1, and it has been run.
+
+★ The pointer that used to sit here read "run the calliper-free check in §6.1".
+**There is no §6.1.** It was §5.1 all along.
 
 [qd]: https://www.lcdwiki.com/res/MSP2807/QD-TFT2803%20specification_v1.1.pdf
 
@@ -356,38 +369,37 @@ From the Side view of the [MSP2806 drawing][size2806]. **VERIFIED:**
 The arithmetic closes, which is a good sign the drawing is self-consistent:
 `1.60 + 0.50 + 2.30 = 4.40` ✓ and `4.40 + 8.38 = 12.78` ✓.
 
-> ### ★ The number that really sets case depth — and it breaks the 20 mm budget
+> ### ★ DECIDED 29 Aug 2026 — 14-WAY FEMALE SOCKET. DO NOT SOLDER WIRES TO THE PADS.
 >
-> 12.78 mm is the module with a bare soldered header and **nothing plugged into
-> it**. The moment a female Dupont jumper goes on, the housing swallows the
-> 8.38 mm of pin and stands roughly **14–15 mm proud of the PCB back face**,
-> before the wire even bends. Realistic worst case, glass face to the back of a
-> seated Dupont shell:
+> This block used to recommend "solder the nine wires straight to the module's
+> pads, no header", on a depth argument. **That recommendation is withdrawn and
+> must not be followed** — it is irreversible, and it was answering the wrong
+> question.
 >
-> ```
-> 4.40 (module)  +  ~15 (Dupont shell)  ≈  19–20 mm      display alone
-> ```
+> The depth argument was real but it belonged to a case with a ~20 mm budget
+> that no longer exists. The case is back-opening and 39.34 mm deep
+> (`case.scad`), and it buys something the flat build cannot:
 >
-> `HARDWARE.md` budgets the whole enclosure at **~20 mm deep**, and that depth
-> has to hold the display *and* the LOLIN32 *and* the wiring *and* two 2.4 mm
-> walls. **Dupont connectors on the display header do not fit. Not marginally —
-> at all.**
+> - **The lid is at the back.** Solder wires to the display and the display and
+>   the perfboard become one object whose front end is bonded into the case.
+>   Every future repair is then nine wires desoldered blind, inside a box,
+>   against a bonded panel.
+> - **With a socket:** undo eight screws, unplug once, and the whole electronics
+>   module lifts out of the back. The display stays put.
+> - **It is the only reversible order.** Socket now and the pins can still be
+>   clipped later if the depth is ever wanted back. Clip now and they are too
+>   short to socket ever again.
 >
-> Three ways out, best first:
+> The cost is 4.5 mm and it is already in the model: **`hdr_gap = 11.04`** =
+> 8.5 mm socket body + 2.54 mm header strip, exact, not rounded. `case.scad`
+> asserts that gap clears the display's folded ribbon and the perfboard's
+> solder side, with 7.0 mm of air over the ribbon.
 >
-> 1. **Solder the nine wires straight to the module's pads, no header.** Module
->    stack becomes 4.40 mm plus the wire. Free, and it also deletes nine
->    vibration-loosening friction joints from a device bolted to a motorcycle —
->    the same argument `HARDWARE.md` already makes for a quarter-turn mount over
->    a clamp screw.
-> 2. **Right-angle header**, so wires exit in the plane of the board. Adds about
->    2.5 mm of depth instead of ~15.
-> 3. **Straight header with the pins cut short.** Keeps 12.78 mm. Worst of the
->    three and still gives no connector.
->
-> This interacts with the Stage 11 perfboard work in §4 and with the backlight
-> MOSFET that `HARDWARE.md` flags as "decide before soldering to perfboard".
-> **Decide the display's wire exit at the same time as the MOSFET.**
+> ★ Two numbers here are the wrong board's and are not to be re-derived from:
+> the header's projection behind the PCB is **10.0 mm measured**, not the
+> drawing's 8.38, and the module is **5.0 mm** thick, not 4.40. Engagement into
+> the socket is deeper than the drawing predicted, which is a bonus, not a
+> problem.
 
 ### 1.6 Mounting holes
 
@@ -419,9 +431,24 @@ This is the same error, from the same cause, as the original `disp_active_off =
 off-centre, the mounting holes are off-centre, and the reason is the same — the
 driver chip eats one end.
 
-Four Ø3.20 holes on a 44.00 × 76.08 grid are a proper mounting scheme for M3 —
-better than trapping the board between bosses and hoping the lid holds it. The
-case does not currently use them; it probably should.
+### ★ DO NOT MOUNT THE DISPLAY ON THESE HOLES. `case.scad` rejects them by name.
+
+This section used to end "the case does not currently use them; it probably
+should." **It should not, and the case deliberately does not.** Two reasons,
+both from `case.scad`:
+
+- **The grid above is the MSP2806's, and this is not an MSP2806.** A reviewer
+  measuring the vendor's own photograph of the board in hand found its mounting
+  holes **evenly spaced**, where the drawing's are lopsided. The 76.08 span also
+  belongs to an 86 mm board; this one is 82 mm.
+- **A rib cannot miss an edge; a post can miss a hole by 2 mm and scrap the
+  print.** So the display is located by ribs bearing on the **PCB outline**
+  — 50.0 × 82.0, verified twice — and held forward by a foam pad on the lid.
+  Screw posts standing in the cavity on unverified hole centres are exactly the
+  failure the back-opening redesign was done to remove.
+
+The Ø3.20 / Ø4.70 figures stay recorded because they are what the drawing says.
+Nothing in the case may be built from them.
 
 ### 1.7 Connectors
 
@@ -542,42 +569,43 @@ consistent with a much narrower board.
 
 **Recommended build — LOLIN32 soldered to perfboard on its own header pins, no socket:**
 
+### ★ `mcu_stack` IS 10.2, NOT 14.0
+
+`case.scad` has **`mcu_stack = 10.2`**, and this document's old "14.0 … keep it"
+was wrong twice over — stale, and double-counted.
+
+`mcu_stack` is measured **from the perfboard's top face**, so the perfboard's
+own 1.6 mm is not part of it. `case.scad` counts `perf_t` separately in the
+cavity-depth sum. The stack is:
+
 ```
-perfboard              1.60
 header plastic         2.54
 LOLIN32 PCB            1.60
-tallest top-face part  6.00   (JST; 3.10 if the JST is removed or shorter)
+JST connector          6.00   (tallest thing on the board)
                       ─────
-                      11.74 mm, plus wire dressing
+                      10.14  ->  mcu_stack = 10.2
 ```
 
-**`case.scad` has `mcu_stack = 14.0`. That is a sound number for this build** —
-11.74 mm plus a little over 2 mm for wiring. Keep it.
+The old 11.74 figure was this same sum with the perfboard added in, and then
+14.0 padded 2 mm of "wire dressing" on top of the double count.
 
-> ### ★ But it fails immediately if you socket the board
->
-> Put the LOLIN32 on **female** header strips so it can be unplugged, and the
-> stack becomes roughly `1.6 + 8.5 + 1.6 + 6.0 ≈ 17.7 mm` before wiring. Add the
-> display and two 2.4 mm walls and the case passes 25 mm, against a ~20 mm
-> budget in `HARDWARE.md`.
->
-> This is the same trap as §1.5, from the other side. **The 20 mm enclosure
-> depth is only achievable if neither board uses pluggable connectors
-> internally.** That is a real design constraint and it should be decided
-> alongside the backlight MOSFET, before anything is soldered.
+★ **The JST stays.** Rider's call, 29 Aug 2026: desoldering it would take the
+stack to 7.2 and the case to 36.3 mm, and a first build is the wrong time to put
+an iron on the only ESP32 there is. It can come off later — a two-pin connector
+on a net nothing uses is the safest desoldering job that exists.
 
-> ### ★ A second, smaller `case.scad` finding
->
-> ```
-> inner_h = disp_pcb_t + mcu_stack + 2.0;      // disp_pcb_t = 1.6
-> ```
->
-> `disp_pcb_t` is the display's **bare PCB** thickness, but the thing that
-> occupies space in the cavity is the whole display module — glass, tape and PCB
-> — which §1.5 verifies as **4.40 mm**. As written, `inner_h` under-counts the
-> display by **2.80 mm**. Either set `disp_pcb_t = 4.4` (and rename it, since it
-> is then a module thickness), or add the 2.8 mm explicitly. Left alone, the lid
-> presses on the display.
+★ **Socketing the LOLIN32 is still ruled out**, but not by a 20 mm budget any
+more — the case is 39.34 mm deep. Female strips would add ~7 mm to the stack for
+a board that is flashed over USB with the back off. Solder it down on male pins,
+plastic against the perfboard.
+
+★ **Two dangling `case.scad` citations removed from here.** This section used to
+carry a finding about `inner_h = disp_pcb_t + mcu_stack + 2.0` under-counting the
+cavity by 2.80 mm. **Neither `inner_h` nor `disp_pcb_t` exists in `case.scad`.**
+The current cavity depth is
+`cav_d = bezel_t + disp_t + hdr_gap + perf_t + mcu_stack + retain_pad`, which
+counts the whole 5.0 mm display module explicitly. The finding was correct when
+written and has been superseded by the rewrite.
 
 [wroom]: https://www.espressif.com/sites/default/files/documentation/esp32-wroom-32_datasheet_en.pdf
 
@@ -605,8 +633,12 @@ holes are visible or they are not.
 
 ### 2.5 Connectors — USB and JST
 
-**Mostly UNKNOWN. This is the weakest area in the whole document, and it matters
-because the USB-C port has to line up with a hole in a sealed wall.**
+★ **THERE IS NO USB OPENING, AND THERE MUST NOT BE ONE.** This section used to
+open "it matters because the USB-C port has to line up with a hole in a sealed
+wall." **Deleting that hole was one of the five reasons the case was turned
+round** (`case.scad` header). **USB is reached by taking the back off.** The
+dimensions below are now only about clearance inside the cavity, and none of
+them can scrap a print.
 
 | Property | Value | Status |
 |---|---|---|
@@ -626,186 +658,170 @@ because they are mechanical, not electrical:
   dead weight — but it is still physically present and, at ~6 mm, is probably
   the **tallest object on the board**. If depth gets tight, desoldering it is a
   legitimate 3 mm saving. Nothing in the design uses it.
-- **The USB port is needed after the case is closed**, because `HARDWARE.md`
-  requires uploads to go through the Arduino IDE over USB. So the wall opening
-  is not optional, and it is a hole in a sealed, gasketed enclosure that also
-  needs an ePTFE vent and a cable gland. Consider whether the USB opening should
-  be a blanking plug or a serviceable panel rather than an open slot.
+- **The USB port is reached by removing the back**, not through a wall. Uploads
+  still go through the Arduino IDE over USB (`HARDWARE.md`); the eight lid
+  screws come out first. That trade was made deliberately: a slot for a plug
+  overmould, in the wall of a foam-sealed box that also carries a potted cable
+  entry and an ePTFE vent, is a leak path bought for the convenience of not
+  undoing eight screws.
 
-**How to place the USB cut-out without a calliper:** do not try to measure the
-connector. Instead, **print the body with no USB opening at all, offer the board
-up, and mark through** — or print a 1 mm-thick throwaway test coupon of just
-that wall face with a generous 12 × 5 mm slot, check the plug seats, and
-transfer the winning dimensions. A USB-C plug overmould is much larger than the
-receptacle, so size the hole for the **plug**, not the socket.
+  The only sealed-wall openings in `case.scad` are the **potted cable entry**
+  and the **Ø6 ePTFE vent** — both of which are filled, not open.
 
 ---
 
 ## 3. BOBO BM4 mount
 
-### 3.1 Ball diameter
+> ★ **`docs/MOUNT_INTERFACE.md` SUPERSEDES THIS SECTION.** The mount was
+> disassembled and measured on 29 Aug 2026. Where the two disagree, that file
+> wins. This section now carries only what it adds.
 
-**UNKNOWN from any published source. 17 mm is a well-founded guess, not a fact.**
+★ **THE MOUNT IS NOT METAL.** This section used to describe a metal ball socket
+and an aluminium phone plate, and `hardware/mount.scad`'s header still does.
+Both are wrong. **The socket and the plate are both polymer. The only metal in
+the entire mount is one screw.** That matters in three places: the plate can be
+replaced by a printed part on equal terms, thread engagement has to be thought
+about rather than assumed, and nothing about the joint can be justified by "it
+is metal, it will hold".
 
-BOBO publishes no engineering dimensions for the BM4 at all. Every retailer
-listing checked repeats the same marketing block and nothing more. What *is*
-confirmed across listings:
+### 3.1 Ball diameter — ★ VERIFIED 17 mm
+
+Upgraded from "a well-founded guess" on 29 Aug 2026. **Ø17.0 mm**, from three
+independent routes:
+
+1. BOBO's **[Metal Buckle Handlebar Attachment][bobobuckle2]** (SKU BB-BM-502) is
+   sold in a 17 mm ball version whose stated compatibility list names the
+   **BM4** explicitly.
+2. BOBO's stem mounts split the same way — **SM1 carries a 25 mm ball, SM2 a
+   17 mm ball** — and the BM4 pairs with the SM2.
+3. A **dimensioned manufacturer photograph** of the part.
+
+[bobobuckle2]: https://www.bobogears.com/product/bobo-metal-buckle-handlebar-attachment/
+
+The remaining caveat is cheap to close and worth thirty seconds: BOBO sells the
+same buckle in **15, 17 and 25 mm**, so a separately bought or swapped handlebar
+attachment could be another size. Paper strip round the ball's equator, mark the
+overlap, flatten, measure:
+
+```
+47.1 mm  ->  15 mm ball
+53.4 mm  ->  17 mm ball   <- expected
+78.5 mm  ->  25 mm ball
+```
+
+Circumference multiplies the error by pi, which is why this beats measuring a
+sphere against a rule. A 15 and a 17 are 6.3 mm apart on the strip — unmissable.
 
 | Item | Value | Status |
 |---|---|---|
-| Handlebar sizes supported | **22, 25 and 32 mm** via metal buckle + plastic spacers | VERIFIED — [Moto Central listing][mc] ("We support 3 common sizes of handlebar diameter i.e. 22, 25, and 32 mm") |
+| Handlebar sizes supported | **22, 25 and 32 mm** via metal buckle + plastic spacers | VERIFIED — [Moto Central listing][mc] |
 | Hex key included | yes, for the buckle | VERIFIED — [mc] |
-| Jaw grip range | 4.0–6.5" phones (some listings say 4.0–7.0") | VERIFIED — [mc], [store4riders][s4r] |
-| **Ball diameter** | **not published by anyone** | **UNKNOWN** |
+| Jaw grip range | 4.0–6.5" phones | VERIFIED — [mc], [store4riders][s4r] |
+| **Ball diameter** | **17.0 mm** | **VERIFIED** — see above |
 
 [mc]: https://motocentral.in/products/bobo-jaw-grip-aluminium-mobile-holder-motorcycle-mobile-mount-without-charger
 [s4r]: https://www.store4riders.com/bobo-bm4-jaw-grip-motorcycle-mobile-mount.html
 
-**Why 17 mm is nevertheless the right thing to design for.** 17 mm is a genuine
-de-facto standard for this class of mount — action-camera rigs, motorcycle phone
-holders and modular vehicle systems — and it is a *tight* standard, not a
-nominal one: true 17 mm balls hold **±0.05 mm** ([17mm ball mount guide][ball]).
-Arkon, iBOLT, Tackform, ProClip and BRCOVAN all build to it. A ₹1,200 Indian
-jaw-grip mount using a non-standard ball would be unusual.
+### 3.2 The plate interface — MEASURED, and no printed ball clamp
 
-[ball]: https://electronics.alibaba.com/buyingguides/17mm-ball-mount-guide-how-to-choose-right
+★ **DELETED FROM THIS SECTION: "print a two-piece pinch socket … pulled together
+by two M3 screws … use a nyloc nut or thread-locker on those M3s."** Do not
+build it. Four things are wrong with it, and the last two are the ones that get
+somebody at a bench:
 
-**Confirm it in two minutes without callipers — the paper-strip method.** This is
-much better than trying to eyeball a curved surface against a ruler:
+1. **Nothing needs to grip the ball.** The rider has the whole BM4 — clamp,
+   ball, collet, collar and plate. Only the *jaw* broke, and the jaw is not
+   used. The printed part replaces the **plate**, not the socket.
+2. **A rigid printed socket has no working size at all.** `mount.scad` works it
+   through: bigger than the ball and it touches at the rim with clearance
+   growing as you tighten; smaller and it is two knife edges at 284 MPa, six
+   times ASA's yield at 60 °C; exactly equal and there is no interference and so
+   no grip.
+3. **M3 is not "a smaller option", it is wrong** for any screw whose head bears
+   on ASA here. `mount.scad`: M4 at 0.4 N·m gives 14.6 MPa and is fine; **M3 at
+   the same 0.4 N·m gives 35.7 MPa and crushes the plastic at design torque.**
+   **M4 minimum, 0.4 N·m maximum** — and there is no torque figure to hit, nip
+   it up until it stops turning easily and stop.
+4. **"Nyloc or thread-locker" is void on both counts.** Anaerobic thread-locker
+   needs metal ions to cure and does not set on a plastic thread; a nyloc nut
+   run down a printed thread strips it. Neither is a way to hold a printed
+   joint. `mount.scad` still repeats this advice in its own M4 block — it is
+   wrong there too.
 
-1. Cut a strip of paper about 8 mm wide. Wrap it once round the ball's equator,
-   pulled snug, and mark where it overlaps with a sharp pencil.
-2. Unwrap, lay it flat on a steel rule, read the distance between the marks.
-   That is the **circumference**.
-3. Divide by π (3.1416).
+**What the interface actually is** (all measured — `MOUNT_INTERFACE.md` §1–§3):
 
-A 17 mm ball gives **53.4 mm** of circumference. A 16 mm ball gives 50.3, an
-18 mm gives 56.5 — so a reading you can take to ±1 mm on a ruler resolves the
-diameter to about **±0.3 mm**, which is better than most people manage with
-cheap callipers anyway. If you read 53–54 mm, it is a 17 mm ball.
+| Feature | Value |
+|---|---|
+| Square key, across flats | **14.0 mm** |
+| Square key, corner to corner | **18.0 mm** |
+| Corner radius | **2.17 mm** — derived, and it is what reconciles the two readings above |
+| Recess depth in the socket face | **2.0 mm** |
+| Screw | **ISO 10642 M3 × 10 countersunk, 90°** — head Ø6.0, head 2.0 high, 8 mm of thread |
 
-**A second free check you already own:** the kit ships **22 mm and 25 mm plastic
-spacers and a 32 mm metal buckle**. Those are three known, moulded diameters
-sitting in the box. Photograph the ball next to the 22 mm spacer, square on,
-and compare — 17 against 22 is an obvious visual ratio (0.77). This doubles as
-the scale reference for §6.
+The square is the only thing stopping the display rotating about the screw.
 
-### 3.2 Socket / arm interface
+★ **The screw goes socket → plate, into a brass insert.** The plate's back
+carries an **M3 brass heat-set insert** at the centre of its raised square pad;
+the socket face has a plain through-hole. **Our printed part replaces the plate,
+so our part carries the female thread** — an M3 brass insert, melted in with a
+soldering iron. This withdraws an earlier working rule in this project ("plain
+clearance hole, no thread in printed plastic"), which assumed the screw ran the
+other way. A brass insert is exactly what BOBO did in their own moulded part,
+for exactly the same reason.
 
-**UNKNOWN. Nothing is published, and this one cannot be derived.**
+Two consequences worth stating plainly:
 
-The BM4's arm terminates in a socket that pinches the ball, tightened by the
-included hex key. No source gives the socket bore, the jaw geometry, the arm
-cross-section, or the thread size.
+- **Screw length is not a design constraint.** A longer M3 countersunk costs a
+  few rupees. Design the joint to the thickness it needs, then specify
+  `10 + (thickness our part adds above the original plate)`.
+- **Our part needs no 90° countersink.** The screw head lands on the socket, not
+  on us.
 
-**The good news is that the design does not need those numbers.** The plan in
-`HARDWARE.md` is to discard the broken copper jaw plate and print an adapter
-that engages the **ball**, and a ball is the one feature here that *is* a
-standard. So design the adapter against the ball, not against BOBO's arm:
+Still unknown, and none of it blocks a print: the diameter of the circular land
+around the square recess, the insert depth in the original plate, and the depth
+of the round boss inside the square recess (`MOUNT_INTERFACE.md` §4).
 
-- **Print a two-piece pinch socket** — a spherical cup of Ø17.0 mm split across
-  its axis, pulled together by two M3 screws. It grips by elastic deformation,
-  so a 0.2–0.3 mm error in the ball diameter is absorbed by the screws rather
-  than becoming a rattle or a press-fit failure.
-- **Make the cup a little deeper than a hemisphere** (about 60 % of the sphere,
-  ~10 mm of a 17 mm ball) so it captures rather than merely rests.
-- **Do not print a one-piece snap-over socket.** It will either be too loose on
-  day one or crack at the split after a few thermal cycles in a black-plastic
-  part sitting in Bengaluru sun — and `HARDWARE.md` already establishes the
-  interior reaches 53–70 °C.
-- Print it in **ASA** like the rest, and note the same argument `HARDWARE.md`
-  makes about friction joints: a pinch socket *is* a friction joint, so use a
-  nyloc nut or thread-locker on those M3s.
+### 3.3 The case-to-mount joint — ★ THE GARMIN LUG AUDIT WAS DELETED
 
-### 3.3 Garmin quarter-turn lug pattern — ★ the `case.scad` figures cannot be verified, and the model has a bug
+This section used to audit `mount_lug_t`, `mount_lug_r`, `mount_plate_d` and
+`mount_lug_w` against hobbyist Garmin quarter-turn figures, report that
+`mount_plate()` renders no lugs at all, and close with "print
+`mount_test_plate()` … **do that before anything else**".
 
-**Checked against the best available sources. Two separate problems.**
+★ **None of those five identifiers exists in any `.scad` file in this repo,
+current or archived.** There is nothing to print and nothing to fix. The audit
+was written against a version of the model that no longer exists, and its
+closing instruction would have sent someone to the printer to make a part that
+cannot be generated.
 
-#### Problem 1: Garmin publishes nothing, so "the standard" has no authority
+**What is actually modelled:**
 
-> "Garmin doesn't publish the dimensions of the quarter-turn interface. The
-> numbers circulating on forums and repositories are hobbyist measurements."
-> — [Kapy CAD, *The Garmin quarter-turn mount*][kapy]
+- **A dovetail.** Constants live in `hardware/dovetail.scad`, which `case.scad`
+  and `mount.scad` both `include` (not `use` — `use` imports modules but not
+  variables, and that silent `undef` is the bug that created the file). The case
+  slides down onto the ridge and a pin locks it.
+- **`mount_plate()` in `case.scad`** — bolted to the lid's outer face by four
+  **M3 × 8** screws into blind pilots, counterbored so no head stands proud
+  under the dovetail adapter.
+- **The flat plate in `mount.scad`**, carrying the dovetail ridge on top and
+  bolting down to the BM4 plate interface in §3.2.
 
-[kapy]: https://kapycad.com/en/learn/standards/garmin-quarter-turn
+★ **Whether the case joint stays a slide or becomes a twist is still open**, on
+stability grounds (`MOUNT_INTERFACE.md` §6.3). The dovetail is what is drawn.
 
-The only dimensional table that source offers is explicitly labelled
-"indicative values from one unit, not official":
+★ **`mount.scad` carries two claims that `MOUNT_INTERFACE.md` refutes**, and
+they are still in that file:
 
-| Feature | Kapy CAD indicative range | `case.scad` value | Verdict |
-|---|---|---|---|
-| Tab thickness | **~1–1.5 mm** | `mount_lug_t = 2.4` | **outside the range, ~2× too thick** |
-| Effective overlap | ~1.5–2 mm | — | not modelled |
-| Overall diameter | **~20–24 mm** | `mount_lug_r = 11.5` → Ø23 | plausible, inside the range |
-| | | `mount_plate_d = 26.0` | larger than any quoted figure |
-| Turn angle | 90° | 90° | ✓ |
-| Lug width | *not given by any source* | `mount_lug_w = 8.0` | **UNKNOWN — unverifiable** |
+| `mount.scad` says | Actually |
+|---|---|
+| the plate joint is a **Hirth coupling**, so never print a mating spline | **Unsupported.** It is a plain rounded square key, 14.0 across flats. Four independent lines of evidence found no teeth anywhere, and the rider's own part is smooth. **A printed square boss is viable** — and per `MOUNT_INTERFACE.md` §6 it should be ~1.8 mm tall in a 2.0 mm recess, so our flat face seats and the boss never bottoms out. |
+| moment arm "BM4 **arm** + plate + adapter = 11.0 mm → 245 N" | **Unfounded.** The standard BM4 has no arm; the main unit attaches directly to the ball. The moment arm needs re-deriving. |
 
-So of the four values `case.scad` flags as UNVERIFIED: **one (lug radius) is
-plausible, one (plate Ø) is oversized, one (lug thickness 2.4) contradicts the
-only published range, and one (lug width 8) cannot be checked at all.** The
-`★ UNVERIFIED` comment in the file is entirely justified and must stay.
-
-#### Problem 2: the real Garmin interface has TWO tabs at 180°, not three at 120°
-
-Both sources consulted describe the same geometry, and it is not what
-`case.scad` models:
-
-> a bayonet with **two opposing tabs** on the device back positioned at 180°,
-> the cradle having a matching recess — insert rotated ~90° from the in-use
-> position, then turn a quarter turn. ([Kapy CAD][kapy])
-
-`case.scad` builds `for (a = [0, 120, 240])` — **three lugs at 120°**.
-`HARDWARE.md` likewise describes "a 3-lug Garmin-style quarter-turn" and argues
-for it as "three lugs behind solid shoulders". That reasoning is sound
-mechanically, but the part it produces is **not Garmin-compatible**. It will not
-enter a genuine Garmin cradle, a Garmin-compatible aftermarket cradle, or any of
-the printed Garmin mounts on Thingiverse/Printables.
-
-**This is a decision, not necessarily a defect.** Two coherent options:
-
-- **Keep 3 lugs at 120°** and accept that the interface is *JiffyTrails-only*.
-  Then you must also print the mating cradle, and the word "Garmin" should come
-  out of `HARDWARE.md` and `case.scad` before it misleads someone into buying a
-  Garmin part. Mechanically this is the stronger joint and the reasoning in
-  `HARDWARE.md` stands.
-- **Go to 2 tabs at 180°** to gain the real ecosystem — cheap aftermarket
-  Garmin-compatible bar cradles, out-front mounts and stem mounts, most under
-  ₹500. Then the dimensions still have to be reverse-engineered from a physical
-  sample, because Garmin publishes none.
-
-Given the owner has no Garmin hardware to copy from, **option 1 (print both
-halves, drop the Garmin name) is far lower risk** and keeps the vibration
-argument intact.
-
-#### Problem 3: as written, `mount_plate()` renders no lugs at all
-
-Independent of which pattern is chosen, the current code does not produce the
-part it describes:
-
-```scad
-cylinder(h = mount_boss_h, d = mount_plate_d);        // Ø26  → radius 13
-...
-polygon([[0,0], [mount_lug_r, -mount_lug_w/2],
-                [mount_lug_r,  mount_lug_w/2]]);      // reaches radius 11.5
-```
-
-**The lugs extend to radius 11.5, inside the Ø26 (radius 13) cylinder they are
-unioned with, so they are completely swallowed by it.** The subsequent
-`difference()` then bores Ø18 straight through the full height. What actually
-renders is a **plain tube, Ø26 outside, Ø18 inside, 6 mm tall — with no
-quarter-turn feature anywhere on it.**
-
-For the lugs to exist, `mount_lug_r` must be **greater than** `mount_plate_d / 2`
-(i.e. > 13 with the current plate), or the plate diameter must shrink below
-2 × 11.5 = 23 mm. Given Kapy CAD's ~20–24 mm overall range, the sane fix is to
-**reduce `mount_plate_d` to about 18–20 mm and keep `mount_lug_r = 11.5`**, so
-the lugs stand ~2 mm proud — which also lands the overall Ø23 comfortably inside
-the indicative range.
-
-The file's own advice — "Print `mount_test_plate()` on its own first … it is a
-3 g, four-minute print" — is exactly right and would have caught this. **Do that
-before anything else.**
+★ **`case.scad`'s M3 screws are not a contradiction of the M4 rule in §3.2.**
+Different joint. The eight lid screws and the four mount-plate screws are M3
+self-tappers into blind ASA pilots, needing ~5 N of preload each against a
+land-on-land hard stop that absorbs over-tightening. The M4 rule governs screws
+that clamp a joint by head bearing pressure on ASA, which is the mount bolt.
 
 ---
 
@@ -817,13 +833,14 @@ From §1.2 and `case.scad`'s own derived values:
 
 ```
 cavity width   = disp_pcb_w + 2 × inner_clear = 50.0 + 2.4 = 52.4 mm
-cavity length  = disp_pcb_l + 2 × inner_clear = 86.0 + 2.4 = 88.4 mm
+cavity length  = disp_pcb_l + 2 × inner_clear = 82.0 + 2.4 = 84.4 mm
 ```
 
-Minus the four Ø7 mm screw bosses, which stand in the cavity corners.
+★ **84.4, not 88.4** — `disp_pcb_l` is 82.0. `case.scad` names the 88.4 as stale
+in the same comment.
 
-**"Beside the display" is not available.** The display module is 50 × 86 mm and
-the cavity is 52.4 × 88.4 mm — the display fills the footprint almost exactly.
+**"Beside the display" is not available.** The display module is 50 × 82 mm and
+the cavity is 52.4 × 84.4 mm — the display fills the footprint almost exactly.
 The perfboard must go **behind** it, stacked, which is what makes the depth
 arithmetic in §1.5 and §2.3 binding rather than academic.
 
@@ -833,16 +850,19 @@ arithmetic in §1.5 and §2.3 binding rather than academic.
 
 | Check | Result |
 |---|---|
-| Fits the 52.4 × 88.4 mm cavity | ✓ 2.4 mm spare across, 18.4 mm spare along |
-| Clears the corner bosses | ✓ the 18.4 mm of spare length lets it sit clear of one pair |
+| Fits the 52.4 × 84.4 mm cavity | ✓ 2.4 mm spare across, 14.4 mm spare along |
+| Clears the corner bosses | ✓ the 14.4 mm of spare length lets it sit clear of one pair |
 | Holds the LOLIN32 (58 × 25.4 mm) | ✓ along the 70 mm axis: 58 mm used, 12 mm spare |
 | Room left beside the LOLIN32 | ✓ **~20 mm × 70 mm** — 8 spare hole columns |
-| Room for the cable gland and drip loop | ✓ the 18.4 mm end gap lines up with `gland_from_end = 22.0` |
+| Room for the potted cable entry | ✓ `case.scad` places it at `cable_x = 4.0`, in the 20 mm window between the display's two end ribs |
 
-That leftover 20 mm strip is not spare capacity, it is exactly where the parts
-`HARDWARE.md` says are still to come must live: the **backlight low-side MOSFET**
-(2N7002 or AO3400, or a BC337), its gate resistor, and the landing pads for the
-nine display wires. Do not choose a smaller board.
+`case.scad` knows this board as `perf_w = 50.0`, `perf_l = 70.0`, and the
+retention ledges are built to it. Do not choose a different size.
+
+★ **The 20 mm strip is NOT for a backlight MOSFET.** This paragraph used to
+allocate it to "the backlight low-side MOSFET (2N7002 or AO3400, or a BC337) and
+its gate resistor". **There is no such part in this build** — see §4.4. Use the
+strip for the 14-way socket's landing pads and wire dressing.
 
 **Buying it in India:** Robocraze stock 3×4 inch (₹24) and 6×4 inch (₹39)
 boards ([Vero Boards collection][rcvero]). Either is larger than needed; score
@@ -892,24 +912,47 @@ almost interchangeably by retailers, and what usually arrives is the
 one you want here — but **look at the product photograph before ordering**,
 because the name will not tell you.
 
-### 4.4 How to lay it out, given the depth problem
+### 4.4 How to lay it out
 
-§2.3 shows the depth budget only closes if the LOLIN32 is **not** socketed. So:
+Two decisions, and they point opposite ways on purpose. **The MCU is soldered
+down. The display is socketed.**
 
 - **Solder the LOLIN32 down through male header pins**, plastic side against the
-  perfboard, no female socket. Stack from the perfboard face ≈ **11.7 mm**.
+  perfboard, no female socket. Stack from the perfboard face = **10.2 mm**
+  (`mcu_stack`, §2.3).
 - Accept that this makes the MCU non-removable. **Flash and fully test the
-  firmware before soldering** — `HARDWARE.md` already requires uploads to go
-  through the Arduino IDE over USB, and the USB port stays accessible through
-  the case wall, so reflashing still works. It is only *replacement* you give up.
-- **Solder the nine display wires directly to the display's pads** (§1.5), and
-  land their other ends on the perfboard. Use stranded wire for anything that
-  crosses between two boards that can move relative to each other; solid core
-  work-hardens and snaps under vibration.
-- **Fit the backlight MOSFET now, not later.** `HARDWARE.md` is explicit:
-  "Decide this before soldering to perfboard in Stage 11 — retrofitting it into
-  a sealed enclosure is the bad version of this job." The 20 mm strip in §4.2
-  exists for it.
+  firmware before soldering** — uploads go through the Arduino IDE over USB
+  (`HARDWARE.md`), and the USB port is reached by taking the back off, so
+  reflashing still works. It is only *replacement* you give up.
+- **Fit a 14-way female socket for the display. Do NOT solder wires to the
+  display's pads** — §1.5 has the reasoning and this is the irreversible one.
+  `hdr_gap = 11.04` in `case.scad` is built around that socket.
+- Use **stranded** wire for anything crossing between two boards that can move
+  relative to each other; solid core work-hardens and snaps under vibration.
+
+> ### ★ THERE IS NO BACKLIGHT MOSFET. DO NOT FIT ONE.
+>
+> This section used to say "**fit the backlight MOSFET now, not later**", and
+> quoted `HARDWARE.md` as its authority. **That sentence no longer exists in
+> `HARDWARE.md`** — it was removed when the schematic was traced. Following it
+> would put an unneeded part into the one perfboard that gets built.
+>
+> **The display module already has the switch.** The LED header pin feeds a 1 kΩ
+> base resistor into an on-board **S8050 NPN** that switches the backlight
+> cathodes to ground (LCDWIKI MSP2807 schematic). It is a **logic input, not a
+> supply rail**, and it costs the driving pin `(3.3 − 0.7) / 1000 = 2.6 mA`
+> against a 40 mA maximum.
+>
+> **GPIO 17 wires straight to the LED pin and nothing else.** `backlight.cpp`
+> drives it through the LEDC PWM peripheral at 20 kHz, 10-bit. No transistor,
+> no gate resistor, no pulldown.
+>
+> ★ **One ten-second check before soldering, because this family of boards is
+> not consistent.** Put a **1 kΩ resistor in series** between 3.3 V and the LED
+> pin. Stays bright → the transistor is there, wire it straight. Goes dark →
+> the pin really is the LED supply on your board, and only then does it need a
+> low-side switch (`backlight.cpp` says 2N7000). This check is the only
+> circumstance in which a transistor belongs in this build.
 
 ---
 
@@ -920,9 +963,9 @@ sourced; a number appearing here means it is not.**
 
 ### 5.1 ★ Confirming the display's active-area offset — the white-screen photo
 
-**What is unknown:** §1.4 gives the offset chain as VERIFIED for the LCDWIKI
-MSP2806, but that the Robocraze SmartElex is the same board is INFERRED. The
-4.90 mm offset is the number most likely to ruin a print.
+★ **DONE, 29 Aug 2026. The answer is 3.5 mm and the board is 82 mm long.** Kept
+as a method, because it is the right way to re-check the aperture if a second
+panel is ever fitted, and because it is what caught the wrong board.
 
 **The method, and it is better than callipers, not a poor substitute for them:**
 
@@ -937,54 +980,53 @@ MSP2806, but that the Robocraze SmartElex is the same board is INFERRED. The
    lid, or braced on a stack of books. Parallax is the dominant error here; get
    the camera square and centred, and stand back and zoom rather than moving in
    close.
-4. **Scale from the PCB, not the header.** The PCB long edge is **86.00 mm** and
-   the short edge **50.00 mm**, both datasheet-verified. Use the 50.00 mm width
-   as the scale — it is a crisp, full-length edge. The 33.02 mm header span
-   works too but its ends are pin centres, which are fuzzier to locate.
+4. **Scale from the PCB's 50.00 mm short edge, not the header and not the long
+   edge.** The width is the one dimension the drawing and the rule agree on, and
+   it is a crisp full-length edge. The 33.02 mm header span works too but its
+   ends are pin centres, which are fuzzier to locate. ★ Do **not** scale from
+   "86.00" — the long edge is **82.0 mm** on this board, and using 86 puts a 5%
+   scale error through every number you then read off.
 5. Measure, in the photo, from each PCB edge to the edge of the lit rectangle.
 
-**Expected results if the board matches:** 9.30 mm at the far end, 19.10 mm at
-the header end, 3.40 mm on each long side, lit rectangle 43.2 × 57.6 mm.
+**What it actually returned:** 14.0 mm at the header end and 7.0 at the far end,
+on the 82 mm board — a lit span of 61.0 where the panel can only produce 57.6
+(320 px × 0.18). Both readings are inflated by 1.70 mm of backlight glow, which
+spills equally at both ends, so the **difference** is the trustworthy part:
+`(14.0 − 7.0) / 2 = 3.5 mm` toward the far end.
 
-**Accuracy:** on a 3000 px-wide photo of an 86 mm board, one pixel is about
-0.03 mm, so the limit is squareness and edge judgement, not resolution —
-realistically **±0.5 mm**. That is comfortably good enough to confirm or reject
-a 4.90 mm offset.
+★ **That is why the offset is taken from the difference and never from a span.**
+Glow inflates a span and leaves a difference alone.
+
+**Accuracy:** on a 3000 px-wide photo one pixel is about 0.03 mm, so the limit
+is squareness and edge judgement, not resolution — realistically **±0.5 mm**.
 
 **With no image editor:** count graph-paper squares directly. 1 mm paper against
-a 9.3 mm offset is perfectly readable by eye.
+a 3.5 mm offset is readable by eye.
 
-**Cross-check that costs nothing:** the two side margins must come out *equal*
-(3.40 mm each) and the two end margins *unequal* (9.30 and 19.10). If your photo
-shows equal end margins, the board is not an MSP2806 and none of §1.4 applies.
+**Cross-check that costs nothing:** the two side margins must come out *equal*.
+The end margins came out **unequal but not by 9.80 mm**, which is what the
+MSP2806 chain predicts — one more confirmation that this is a different board.
 
-### 5.2 The LOLIN32 USB-C cut-out — do not measure it, transfer it
+### 5.2 The LOLIN32 USB-C cut-out — ★ DELETED, THERE IS NO CUT-OUT
 
-**What is unknown:** the USB-C receptacle's overhang past the PCB edge, and its
-exact height and width above the board (§2.5).
+There is no USB opening in this case and there must not be one (§2.5). The
+throwaway-coupon procedure that used to live here was measuring a hole that the
+back-opening redesign exists to delete. **USB is reached by removing the back.**
 
-**Method:** do not measure the connector. Print a **throwaway coupon** — a
-1 mm-thick rectangle the size of that wall face with a generous 12 × 5 mm slot —
-and check the actual plug seats through it. Adjust once, then transfer the
-winning numbers into `case.scad`. Two ten-minute prints beat a calliper here,
-because the thing that must fit is the **plug's overmould**, which is far bigger
-than the receptacle and varies between cables.
+### 5.3 The BM4 ball — resolved, method kept
 
-### 5.3 The BM4 ball — the paper-strip method
+★ **Resolved: Ø17.0 mm, VERIFIED** (§3.1). The paper-strip method is kept there
+because it is the thirty-second way to rule out a swapped 15 or 25 mm buckle.
 
-Fully described in **§3.1**. Wrap, mark, unwrap, read, divide by π. A 17 mm ball
-reads 53.4 mm of circumference; resolution about ±0.3 mm.
+### 5.4 The Garmin lug geometry — ★ DELETED, NOT PART OF THIS DESIGN
 
-### 5.4 The Garmin lug geometry — unknowable from documentation
+There is no Garmin quarter-turn interface in this project. The case-to-mount
+joint is a **dovetail** (§3.3), and the mount-to-BM4 joint is a **14 mm square
+key and one M3 screw**, both measured.
 
-**What is unknown:** everything. Garmin publishes no dimensions at all (§3.3),
-so there is no source to consult and no arithmetic to do.
-
-**Method:** `mount_test_plate()` already in `case.scad` is the right instrument —
-a 3 g, four-minute print. But **fix the geometry bug in §3.3 first**, because as
-written it renders a plain tube with no lugs, so printing it currently tests
-nothing. Then print, offer up, adjust one variable, reprint. Three iterations
-will beat any measurement.
+★ The instruction that used to close this section — "`mount_test_plate()`
+already in `case.scad` is the right instrument … **do that before anything
+else**" — pointed at a module that **does not exist in any `.scad` file here**.
 
 ### 5.5 LOLIN32 mounting holes — look at the board
 
@@ -1002,67 +1044,77 @@ what `case.scad` already assumes. **Calliper-free check:** stack ten known
 
 | Unknown | Section | Does it block printing? |
 |---|---|---|
-| SmartElex == MSP2806 dimensionally | §1.1, §1.4 | **Yes for the lid** — run §5.1 |
-| USB-C overhang and cut-out size | §2.5 | **Yes for the body wall** — run §5.2 |
+| SmartElex ≠ MSP2806 — **RESOLVED**, board measured | §1.1, §1.4 | No — 82.0 and 3.5 mm, both measured |
+| USB-C cut-out — **DELETED**, no opening exists | §2.5, §5.2 | No |
 | LOLIN32 mounting holes | §2.4 | No — design as if none |
-| BM4 ball diameter | §3.1 | **Yes for the adapter** — run §5.3 |
-| BM4 socket/arm geometry | §3.2 | No — design against the ball instead |
-| Garmin lug dimensions | §3.3 | **Yes for the mount** — and no source exists |
+| BM4 ball diameter — **RESOLVED**, Ø17.0 VERIFIED | §3.1 | No |
+| BM4 plate interface — **RESOLVED**, measured | §3.2 | No — `MOUNT_INTERFACE.md` §1–§3 |
+| Garmin lug dimensions — **NOT PART OF THIS DESIGN** | §3.3, §5.4 | No |
 | Both PCB thicknesses | §1.2, §2.2 | No — 1.6 mm, clearance absorbs it |
-| JST connector height | §2.5 | No — but it may set `mcu_stack`; look at it |
+| JST connector height — **RESOLVED**, 6.0 measured, and it stays | §2.3 | No |
+| Diameter of the land around the BM4 square recess | `MOUNT_INTERFACE.md` §4 | No — a boss inside the 2.0 mm recess clears it either way |
+| Depth of the round boss inside that recess | `MOUNT_INTERFACE.md` §4 | **Yes for the mount adapter** — our boss must clear it or pocket for it |
 
 ---
 
 ## 6. Mapping onto `hardware/case.scad`
 
-Every parameter the brief asked about, with the value this research supports.
+★ **THIS TABLE IS NOW A RECORD, NOT A WORK LIST.** Every change it once
+recommended has been made, and `case.scad` renders clean with 38 asserts passing
+at 64.4 × 96.4 × 39.34 mm. **`case.scad` is the authority; this column is here so
+a stale number can be recognised on sight.**
 
-| `case.scad` parameter | Current | **Recommended** | Status | Source |
-|---|---|---|---|---|
-| `disp_pcb_l` | 86.0 | **86.0** — no change | VERIFIED | [MSP2807 manual p.2][msp2807], [MSP2806 drawing][size2806] |
-| `disp_pcb_w` | 50.0 | **50.0** — no change | VERIFIED | same |
-| `disp_active_l` | 57.6 | **57.6** — no change | VERIFIED | [MSP2807 manual p.2][msp2807]; independently derived, §1.3 |
-| `disp_active_w` | 43.2 | **43.2** — no change | VERIFIED | same |
-| **`disp_active_off`** | **0.0** | **★ 4.90** | VERIFIED for MSP2806; confirm via §5.1 | [MSP2806 drawing][size2806], §1.4 |
-| `mcu_l` | 58.0 | **58.0** — no change | VERIFIED (vendor of the actual SKU) | [Robocraze TIFCC0110][rclolin] |
-| `mcu_w` | 26.0 | **26.0** — keep the slack | VERIFIED 25 / 25.4, sources differ | [Robocraze][rclolin] 25; [espboards][espb] 25.4 |
-| `mcu_stack` | 14.0 | **14.0** — but only if the MCU is *not* socketed | INFERRED, built up in §2.3 | [Espressif WROOM-32][wroom] + typical parts |
-
-### The one change that matters
-
-```scad
-disp_active_off = 4.90;   // was 0.0
-```
-
-**Sign convention.** In `case.scad` the display's long axis is `y`, and the
-aperture is placed by `translate([0, disp_active_off, -1])`. The active area
-must shift **away from the pin-header end**. The header end is where the wires
-leave, so it is the end with the cable gland — and the gland is placed at
-`-body_l/2 + gland_from_end`, i.e. the **−y** end. Therefore the far end is
-**+y** and the offset is **positive: `+4.90`**.
-
-If you orient the board the other way round when you build it, the sign flips.
-**Check it before printing the lid** — this is a one-character error that scraps
-a print.
-
-### Three further changes this research turned up, outside the requested list
-
-| Where | Issue | Fix |
+| `case.scad` parameter | Value in the model | Status |
 |---|---|---|
-| `inner_h` (§2.3) | Uses `disp_pcb_t = 1.6`, the bare PCB, but the display *module* is **4.40 mm** thick. Under-counts the cavity by **2.80 mm**; the lid presses on the glass. | Set `disp_pcb_t = 4.4` (and rename — it is a module thickness), or add 2.8 mm to `inner_h` |
-| `mount_plate()` (§3.3) | Lugs reach r = 11.5, inside the Ø26 plate they union with, so **no lugs render at all** — the part is a plain tube | Reduce `mount_plate_d` to ~18–20, keep `mount_lug_r = 11.5` |
-| `mount_lug_t` (§3.3) | 2.4 mm against the only published indicative range of **1–1.5 mm** | Unresolvable from documentation — print and fit |
+| `disp_pcb_l` | **82.0** | ★ MEASURED. Was 86.0, from the wrong drawing. |
+| `disp_pcb_w` | **50.0** | VERIFIED twice — drawing and rule agree |
+| `disp_t` | **5.0** | MEASURED. Drawing said 4.40. |
+| `disp_frame_proud` | **0.35** | MEASURED — the panel frame stands proud of the PCB |
+| `disp_active_l` | **57.6** | VERIFIED — 320 px × 0.18 mm, and §1.3 |
+| `disp_active_w` | **43.2** | VERIFIED — 240 px × 0.18 mm |
+| **`disp_active_off`** | **3.5** | ★ MEASURED. Not 0, not 4.90. Read only by `bezel()`. |
+| `hdr_gap` | **11.04** | 8.5 socket + 2.54 strip, exact. §1.5. |
+| `perf_w` / `perf_l` | **50.0 / 70.0** | the standard 5 × 7 cm board, §4.2 |
+| `mcu_w` | **26.0** | keeps ~0.6 mm of deliberate slack over 25.4 |
+| `mcu_stack` | **10.2** | ★ Was 14.0 here, which double-counted `perf_t`. §2.3. |
+| `foam_w` / `foam_d` | **4.0 / 2.0** | 3 mm closed-cell EPDM tape closing to 2 mm = 33% |
+
+### ★ The sign of `disp_active_off`, which is still a one-character risk
+
+In `case.scad` the display's long axis is `y`, and `bezel()` places the aperture
+by `translate([0, disp_active_off, …])`. The active area must shift **away from
+the pin-header end**, which is where the wires leave and therefore the end with
+the **potted cable entry** — the −y end. So the far end is +y and the offset is
+**positive: `+3.5`**.
+
+★ The old text here justified the sign by "the gland is placed at
+`-body_l/2 + gland_from_end`". **There is no gland and no `gland_from_end`.**
+The entry is potted, at `cable_x = 4.0`. The sign conclusion is unchanged; only
+the landmark used to reach it was stale.
+
+If you orient the board the other way round when you build it, the sign flips —
+but this now costs a 5 g bezel reprint, not the case.
 
 ### Confidence, honestly stated
 
-- **Display (§1): high.** A dimensioned drawing exists for the exact non-touch
-  SKU, and every figure cross-checks against a second source or against
-  arithmetic. The one open question is whether Robocraze's rebadge is the same
-  board, which §5.1 settles in an afternoon.
-- **LOLIN32 (§2): moderate for the outline, low for everything else.** The board
-  is not a WEMOS product and has no datasheet. 58 mm comes from the vendor of the
-  actual SKU; the stack height is a build-up from published component sizes, not
-  a measurement.
-- **Mount (§3): low, and irreducibly so.** BOBO publishes nothing and Garmin
-  publishes nothing. This section is the one that must be resolved by printing
-  test parts rather than by reading.
+★ **Rewritten 1 Sep 2026. The confidence order has inverted.** The section that
+had a dimensioned drawing turned out to be describing a different board; the
+sections that had nothing published were resolved by putting a rule on the part.
+
+- **Display (§1): high — but from the RULE, not the drawing.** The MSP2806
+  drawing is internally consistent and belongs to another product. Two of its
+  numbers reached this document as VERIFIED and were both wrong: the 86 mm
+  length and the 4.90 mm offset. What is trusted now is what was measured, and
+  each measurement has a second reading agreeing by a different route.
+- **LOLIN32 (§2): moderate for the outline, high for the stack.** The board is
+  not a WEMOS product and has no datasheet, so the outline is still the vendor's
+  word. The stack is now measured — 10.2 mm, JST included.
+- **Mount (§3): high for the interface, open on one dimension.** BOBO publishes
+  nothing, so the mount was taken apart and measured (`MOUNT_INTERFACE.md`). The
+  square key's two readings pin a single plausible moulded geometry, and the
+  screw matches ISO 10642 on three independent numbers. What is still open is
+  the depth of the round boss inside the square recess.
+- **The general lesson this document earned twice:** a verified number from the
+  wrong source reads exactly like a verified number from the right one. Status
+  labels do not protect against misidentified parts. **Trust the board on the
+  desk.**

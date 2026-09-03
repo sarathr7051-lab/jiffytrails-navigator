@@ -1,4 +1,38 @@
 /*
+  ==========================================================================
+  ★★ SUPERSEDED - DO NOT PRINT FROM THIS FILE. 29 Aug 2026.
+  ==========================================================================
+
+  This whole design assumed the printed plate BOLTS THROUGH the BM4's own
+  aluminium phone plate, using that plate's existing holes. Two things killed
+  it, both reported by the rider with the part in his hand:
+
+    1. THE PLATE IS GLUED ON. It does not come off, so there is nothing to
+       bolt through. The four M4 clearance holes and `bolt_d = 4.5` below
+       describe an assembly that cannot be made.
+
+    2. THERE IS NO ALUMINIUM. The BM4 is polymer throughout; the only metal
+       anywhere in the mount is one ISO 10642 M3 countersunk steel screw.
+       Every "aluminium plate" in the text below is wrong.
+
+  Also refuted since: the ★ block warning against printing a mating spline.
+  The BM4's plate joint is NOT a Hirth coupling - it is a plain rounded-square
+  key, 14.0 mm across flats, 2.17 mm corner radius, 2.0 mm deep, MEASURED. A
+  printed square boss is viable. See docs/MOUNT_INTERFACE.md.
+
+  And the load figure: "BM4 arm + plate + adapter 11.0 mm -> 245 N" describes
+  an ARM the standard BM4 does not have. The main unit goes straight onto the
+  ball. That number is unfounded.
+
+  ★ THE REPLACEMENT IS hardware/mount_v2.scad - the adapter now REPLACES the
+  phone plate rather than bolting to it, carries a brass heat-set insert for
+  the M3 screw, and locks to the case with a transverse steel pin rather than
+  the thumbscrew that has been found broken four separate times.
+
+  Kept only so the reasoning survives. The dovetail geometry and the
+  print-orientation notes at the bottom are still sound; nothing else is.
+  ==========================================================================
+
   JiffyTrails mount - ONE printed part.
 
   Open in OpenSCAD, set `part`, press F6, File > Export > STL.
