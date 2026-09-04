@@ -20,10 +20,13 @@ in the design and three that are were missing.** Against `hardware/case.scad`:
 |---|---|---|
 | **ASA filament, light coloured** | **not PETG, never PLA** | PETG's HDT is 65–80 °C against a sealed interior estimated at 53–70 °C in Bengaluru sun. See the Enclosure section. |
 | **Closed-cell EPDM foam tape, 3 mm** | 4 mm wide, closes to 2 mm = 33% compression | The seal. `foam_w = 4.0`, `foam_d = 2.0`. ★ **Closed-cell, NOT open-cell polyurethane** — most cheap foam tape is open cell and wicks like a sponge. Test it: hold a piece under water and squeeze. Open cell streams bubbles and stays wet. |
-| **M3 self-tapping screws** | **8 × M3 × 12** (lid), **4 × M3 × 8** (mount plate), **2 × M3 × 6** (hood) | ★ The lid's eight must be **PAN head** (DIN 7981, 5.6 × 2.4), not socket cap. A DIN 912 cap is 3.0 mm tall and stands 0.29 mm into the mount plate's dovetail slot, jamming the adapter. ★ The mount plate's four are **× 8, not × 12** — an M3 × 12 bottoms out before the plate is tight and carries no preload at all. |
+| **M3 self-tapping screws** | **8 × M3 × 14** (cap → lid → body), **2 × M3 × 5** (hood) | ★ **REWRITTEN 3 Sep 2026 for the bayonet mount** — the line above used to say 8 × 12, 4 × 8 and 2 × 6, and all three were for the dovetail. The eight now run through **three** parts as one fastener set: 2.4 mm of mount cap under its counterbore, 5.0 mm of lid, then a 2.5 mm pilot 9.0 mm blind into the body. ×14 gives 6.6 mm of thread and never bottoms; ×12 gives 4.6 and ×16 is 0.4 mm from the floor. ★ **PAN head** (DIN 7981, 5.6 × 2.4), not socket cap: the cap's counterbore is 2.6 mm deep and a DIN 912 cap head is 3.0 mm tall, so it stands proud into the collar. ★ **The hood's two are ×5, NOT ×6** — `hood_pilot_len` is 4.0 mm blind over a 2.0 mm floor and a ×6 bottoms out before the hood is tight. ★ **There is no mount plate any more**; its 4 × M3 × 8 are deleted. Measured off the printed geometry, not the drawing: cap, lid and body carry the same eight positions, verified by solid intersection. |
 | **M3 brass heat-set insert** | 1, for the mount adapter | The BM4's screw runs socket → plate into a brass insert, so our part carries the female thread. `MOUNT_INTERFACE.md` §3. ★ **Not for the case** — `case.scad` rejects inserts there: they need a 4.0 mm bore and 1.6 mm of wall either side, costing 2.4 mm of envelope in both directions, and eight iron-driven insertions into a part that cannot be reprinted. |
 | **ePTFE membrane, Ø6 vent** | can be cut from an old rain jacket | Free |
 | **Potting compound** | clear RTV or epoxy, for the cable entry | ★ **No cable gland.** See below. |
+| **USB-C cable, ≤ Ø4.5 mm** | thin, right-angle at the bike end; the far plug is cut off and soldered inside | ★ `cable_bore_d = 4.5` and the case is printed. A braided cable is 5–6 mm and will not go through. Measure with a paper strip: circumference ÷ 3.1416. |
+| **Power protection** | SMBJ6.0A TVS, 220 µF hybrid/polymer 16 V, 100 nF ceramics, ferrite bead, 1 A polyfuse | `FEATURES.md` "Decision: cable power, no battery". ★ 6.0A not 5.0A. ★ Polymer, not 85 °C electrolytic. |
+| **USB power meter** | inline, cheap | Answers whether the Speed 400's socket is ignition-switched or always live, and its real current. Nobody has measured either. |
 | Anti-glare film | cut from a phone screen protector | Sunlight section |
 
 **Deleted, and do not buy:**
@@ -34,9 +37,10 @@ in the design and three that are were missing.** Against `hardware/case.scad`:
   closed and the panel is bonded behind it; `bezel()` does the precise work. A
   window with an air gap in front of the panel is also the wrong answer
   optically — see the Enclosure section.
-- **M4 fasteners** — nothing in `case.scad` uses M4. The M4-minimum rule in
-  `mount.scad` governs a joint clamped by head pressure on ASA, which is the
-  mount bolt, not the case screws.
+- **M4 fasteners** — nothing in `case.scad` or `mount_v4.scad` uses M4. The only
+  bolt in the whole mount is the BM4's own ISO 10642 M3 × 10 countersunk, which
+  you already have. (`mount.scad`, which carried an M4 rule, is the abandoned
+  dovetail design and is not what is printing.)
 
 **Deliberately excluded:** GPS module, magnetometer, vibration motors, internal
 battery. Reasons in PROJECT_STATE.md.
@@ -382,9 +386,12 @@ only metal in the whole mount is one ISO 10642 M3 × 10 countersunk screw.**
 The printed adapter takes the plate's place in the stack, which means it has to
 reproduce the plate's own interface to the socket:
 
-- a **square key**, 14.0 mm across flats, 18.0 corner to corner, 2.17 mm corner
-  radius, seating in a 2.0 mm recess — and the boss must be **shorter** than the
-  recess (about 1.8 mm) so our flat face seats on the socket's flat face;
+- a **square cavity** — ★ CORRECTED 2 Sep 2026: the socket's square
+  **protrudes** 2.0 mm and the plate's is the recess, not the other way round.
+  Ours is 14.5 mm across flats, 2.42 mm corner radius, **2.20 mm deep** — deeper
+  than the boss is tall, so our flat face seats on the socket's flat face and the
+  square only keys rotation. It also puts the seating face flat on the print bed
+  as the first layer, which is why it needs no support;
 - an **M3 brass heat-set insert** on the centre line. The screw runs socket →
   plate, so **our part carries the female thread.** This withdraws the earlier
   project rule "no thread in printed plastic" — a brass insert is what BOBO
@@ -395,18 +402,23 @@ Full measurements and the reasoning: **`docs/MOUNT_INTERFACE.md`**, which
 supersedes `COMPONENT_DIMENSIONS.md` §3 and the narrative in
 `hardware/mount.scad`.
 
-★ **The "3-lug Garmin-style quarter-turn" this section used to specify is
-gone.** The case-to-mount joint is a **dovetail** (`hardware/dovetail.scad`,
-included by both `case.scad` and `mount.scad`) with a locking pin. The
-vibration argument that chose a quarter-turn over a clamp screw still holds and
-the dovetail satisfies it — a shear plane with nothing to unwind — but nothing
-here is Garmin-compatible and the word should not be used.
+★ **The dovetail is gone too. The joint is a quarter-turn bayonet** —
+`hardware/mount_v4.scad`, superseding `mount.scad`, `mount_v2.scad`,
+`mount_v3.scad` and `dovetail.scad`, which remain only as history. Three lugs
+on a central boss drop through three slots in the adapter's collar, a **55°**
+twist takes them under a flat shoulder, a printed spring blade drops a tooth
+into a notch, and hard stops arrest it 3° past the lock. One lug is 48° wide
+against 44° slots so it goes on exactly one way. Release is a firm twist,
+around 0.4 N·m — the retaining flanks are ramped at 60° because the release
+tab sits under the cap where no finger can reach it. Verified in two geometry
+kernels (CGAL and OCCT): 0.000 mm³ interference locked, 244 mm³ against a 3 mm
+lift, and the spring at 1.26 % root strain over its real 18.5 mm free length.
+The full record is in the git history of 3 Sep 2026 and the review pages it
+links.
 
-★ **Two claims still in `hardware/mount.scad` are refuted** by the measured
-part: that the plate joint is a **Hirth coupling** (it is a plain rounded square
-key — no teeth anywhere), and that the moment arm is "BM4 **arm** + plate +
-adapter = 11.0 mm". The standard BM4 has no arm; the unit attaches directly to
-the ball, so that number needs re-deriving.
+The rider's case pockets when parked and the adapter stays on the bike; the
+same eight screws that seal the lid also fix the cap, so mount load never
+passes through the foam seal.
 
 ## Enclosure
 
@@ -453,8 +465,11 @@ hood up"**. There is no mount face on the body any more and no hood on the lid.
 | Part | Orientation |
 |---|---|
 | **body** | **FRONT FACE DOWN.** Puts the sealing rim on top, where it prints accurately with no elephant's foot, and the flange flares outward going up at 45° so it is self-supporting. **5 mm brim** — the first layer is a picture frame and adhesion is not optional. |
-| **lid** | **OUTER FACE DOWN — but decide this at the printer.** ★ The "solid 64 × 100 first layer" that used to justify it does not exist: the plate is 64.4 × 96.4 and the mount plate's keying recess is cut 1.0 mm into that very face over 56.4 × 88.4. So the first five layers are a 4 mm picture frame and the sixth has to bridge the whole 56 × 88 opening, unsupported. Nothing in the geometry depends on the answer. |
-| bezel, hood, mount plate | flat, trivial |
+| **lid** | **OUTER FACE DOWN.** ★ The warning that stood here about a 4 mm picture frame and a 56 × 88 bridge described the mount plate's keying recess, deleted with the dovetail. Measured on the current part: 6085.8 mm² of solid first layer, no bridge, nothing over 45°. The easiest print of the set. |
+| bezel | flat, trivial |
+| hood | **MOUTH DOWN.** Two first-layer islands — the vent window cuts the skirt ring through its full height and they only join at z 15. Brim both. Its window ceiling is the only real bridge in the set, 27 mm. |
+| mount adapter | **SEATING FACE DOWN.** The square cavity is the first layer, 1248 mm² flat on the bed, no support and no witness marks on the one datum that must be true. |
+| mount cap | **OUTER FACE DOWN**, support in the pocket only. |
 
 ### Sealing, venting and cable entry
 
@@ -489,14 +504,16 @@ raises display surface temperature **40–50 °C above ambient**. A documented c
 had a 50 °C-rated panel reach **90 °C in sun and black out completely**, with
 repeated exposure leaving permanent "solar clearing" spots. **A quick-release
 mount so the unit comes off when parked is a legitimate engineering answer** —
-it is effectively what Beeline ships, and the dovetail provides it.
+it is effectively what Beeline ships, and the quarter-turn bayonet provides it —
+one twist and the case is in a pocket.
 
 ### Hood and mounting angle
 
 - **Sunshade hood, 30 mm deep, matte black, 5 ribs inside.** Not cosmetic. Per
   the sunlight arithmetic above this is the largest single readability gain
-  available, worth more than any backlight change. Bolt-on, two M3 × 6 into
-  blind pilots in pads on the body's sides.
+  available, worth more than any backlight change. Bolt-on, two **M3 × 5** into
+  blind pilots in pads on the body's sides — ★ ×5, not ×6: the pilot is 4.0 mm
+  over a 2.0 mm floor and a ×6 bottoms out before the hood is tight.
 - **MOUNTING ANGLE IS THE SECOND-LARGEST GAIN, AND IT IS FREE.** Rider test,
   29 Aug 2026, in real daylight: *"keep it straight up, I'm not able to see
   clearly, but if I adjust the angle I'm able to see it properly."*
@@ -511,7 +528,7 @@ it is effectively what Beeline ships, and the dovetail provides it.
   Two consequences for the build:
     - The ball joint is not a convenience. It is the adjustment that makes this
       panel usable in sun, and any mount that gives it up is the wrong mount.
-      The dovetail sets only which way is up — never the angle.
+      The bayonet sets only which way is up — never the angle.
     - **`hood_rake = 12` is provisional.** Once the rider settles on an angle it
       wants setting to match, or the hood shades the wrong part of the sky.
 
