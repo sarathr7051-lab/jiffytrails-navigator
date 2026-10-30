@@ -56,8 +56,8 @@ object WristAlert {
       Galaxy Wearable's switch is per APP, not per channel, so the band does not
       need re-enabling.
     */
-    private const val CHANNEL_ID_V1 = "wrist_turns"
-    const val CHANNEL_ID = "wrist_turns_v2"
+    private val CHANNEL_IDS_OLD = listOf("wrist_turns", "wrist_turns_v2")
+    const val CHANNEL_ID = "wrist_turns_v3"
     const val CHANNEL_NAME = "Wrist turn alerts"
 
     /**
@@ -85,14 +85,20 @@ object WristAlert {
       three moments then mean the same thing at any speed:
 
         120 s - there is a turn coming, and what kind
-         45 s - get into position for it
-         15 s - it is now
+         60 s - it is the next thing to happen
+         30 s - get into position for it
+         12 s - it is now
+
+      ★ FOUR, NOT THREE. Three left gaps of up to 33 seconds on a long leg
+      and the rider asked for more - a wrist that has said nothing for half a
+      minute reads as a wrist that has stopped working, and the whole point of
+      a backup instrument is that you can tell it is still there.
 
       At 45 km/h those land near 1500 m, 560 m and 190 m. In traffic at 18 km/h,
       600 m, 225 m and 75 m. At 70 km/h, 2.3 km, 875 m and 290 m. The rider gets
       the same time to react on every road.
     */
-    private val THRESHOLDS_S = intArrayOf(120, 45, 15)
+    private val THRESHOLDS_S = intArrayOf(120, 60, 30, 12)
 
     /*
       ★ NO TWO WARNINGS CLOSER TOGETHER THAN THIS, except the last one.
@@ -105,8 +111,12 @@ object WristAlert {
 
       The final warning is exempt. It means "now", and a rider who has just been
       told about a turn still needs telling when to act on it.
+
+      ★ 12 s, DOWN FROM 20. With four thresholds instead of three the real
+      gaps are smaller by design, and a 20 s floor was swallowing the extra
+      warnings it was supposed to let through.
     */
-    private const val MIN_GAP_MS = 20_000L
+    private const val MIN_GAP_MS = 12_000L
 
     /** Until the distance has moved twice there is nothing to measure. */
     private const val DEFAULT_MPS = 12.5        // 45 km/h
@@ -131,31 +141,29 @@ object WristAlert {
     private const val TIMEOUT_MS = 120_000L
 
     /*
-      ★ EMOJI ARROWS, NOT TEXT ARROWS, AND THAT IS THE POINT.
+      ★ PLAIN TEXT ARROWS, AND THE EMOJI EXPERIMENT IS REVERTED.
 
-      The rider's words: in daylight at riding speed the arrow is still small.
-      The band draws the title in its own font at its own size and no app can
-      change that - but it draws EMOJI far larger than text glyphs, and in
-      colour. U+2190 is a thin monochrome character the height of a letter;
-      the emoji form is a filled graphic many times its area, for the same one
-      position in the string.
+      Emoji draw several times larger than text glyphs, so they looked like the
+      answer to "the arrow is too small in daylight". On the wrist they were
+      worse, and the rider's reason is one no amount of reasoning here would
+      have produced: the band renders a notification on a BLUE background, and
+      Samsung's emoji arrows are themselves blue. Blue on blue. The monochrome
+      glyphs below are drawn in the notification's text colour - white on that
+      blue - so they are smaller and far easier to tell apart, which is the
+      thing that actually matters at a glance.
 
-      U+FE0F is a variation selector meaning "draw the emoji form, not the text
-      form". Without it a renderer may fall back to the small monochrome glyph,
-      which is precisely what we are getting away from.
-
-      No arrow ever carries meaning alone - detail() spells the turn out in
-      words underneath - so if a firmware refuses to draw these, nothing is lost
-      but size.
+      Size lost to contrast gained. Worth remembering if anyone is tempted by
+      emoji again: measure them where they will be read, not where they are
+      written.
     */
-    private const val L_ARROW = "⬅️"
-    private const val R_ARROW = "➡️"
-    private const val UP_ARROW = "⬆️"
-    private const val UL_ARROW = "↖️"
-    private const val UR_ARROW = "↗️"
-    private const val U_TURN = "↩️"
-    private const val RNDBT = "🔄"
-    private const val FLAG = "🏁"
+    private const val L_ARROW = "←"        // left
+    private const val R_ARROW = "→"        // right
+    private const val UP_ARROW = "↑"       // straight on
+    private const val UL_ARROW = "↖"       // slight / keep left
+    private const val UR_ARROW = "↗"       // slight / keep right
+    private const val U_TURN = "↩"         // u-turn
+    private const val RNDBT = "↻"          // roundabout
+    private const val FLAG = ""                  // arrival says it in words
 
     /**
      * Cancel the old notification before posting the new one.
@@ -432,7 +440,7 @@ object WristAlert {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        runCatching { nm.deleteNotificationChannel(CHANNEL_ID_V1) }
+        CHANNEL_IDS_OLD.forEach { old -> runCatching { nm.deleteNotificationChannel(old) } }
 
         val ch = NotificationChannel(
             CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH
@@ -440,12 +448,13 @@ object WristAlert {
             description = "The next turn, mirrored to a wrist band while riding."
             enableVibration(true)
             /*
-              ★ TWO SHORT PULSES, NOT ONE LONG BUZZ. The rider's words: one
-              continuous buzz "feels too long". Two short taps are also easier to
-              tell from an ordinary message without looking, which is the whole
-              job of a backup instrument.
+              ★ ONE LONG PULSE. Two short taps were tried on the rider's
+              suggestion and reverted on his evidence: through a jacket sleeve
+              at road speed they were "sometimes not able to feel it". A single
+              sustained buzz has more energy in it and survives being felt
+              through clothing, which is the only place this has to work.
             */
-            vibrationPattern = longArrayOf(0, 140, 110, 140)
+            vibrationPattern = longArrayOf(0, 650)
             /*
               Vibrate, but make no sound. IMPORTANCE_HIGH is what gets the
               notification mirrored promptly rather than queued, but the default
@@ -497,7 +506,7 @@ object WristAlert {
             Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "$U_TURN$d"
             Mv.ROUNDABOUT -> "$RNDBT$d"
             Mv.CONTINUE, Mv.DEPART, Mv.FLYOVER, Mv.UNDERPASS -> "$UP_ARROW$d"
-            Mv.DESTINATION -> "$FLAG ARRIVED"
+            Mv.DESTINATION -> "ARRIVED"
             Mv.FERRY -> "FERRY$d"
             in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15) ->
                 "$RNDBT${code - Mv.ROUNDABOUT_EXIT_BASE}$d"
