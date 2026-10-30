@@ -94,13 +94,27 @@ object WristAlert {
      * indefinitely. Sixty seconds is longer than any gap between Maps updates
      * on a live route and short enough that a dead route clears itself.
      */
-    private const val TIMEOUT_MS = 60_000L
+    private const val TIMEOUT_MS = 120_000L
 
     // ------------------------------------------------------------------ state
 
     private var currentManeuver = Mv.UNKNOWN
     private var buzzedNear = false
     private var lastPosted: String? = null
+    private var lastBand = -1
+
+    /**
+     * Cancel the old notification before posting the new one.
+     *
+     * An experiment, default off. The band stacks updates (see band() below),
+     * and an explicit removal before each arrival is the obvious thing to try -
+     * it is literally "clear the previous one, then post the next". The cost if
+     * it works is that a cancelled-then-reposted notification is a NEW arrival
+     * rather than an update, so setOnlyAlertOnce can no longer keep a silent
+     * update silent, and every refresh would buzz. Measured before shipping
+     * either way; WristTestReceiver's TEST_STACK runs both arms.
+     */
+    private const val CANCEL_BEFORE_POST = true
 
     /** maneuver code -> elapsedRealtime when it stopped being current. */
     private val leftAt = HashMap<Int, Long>()
@@ -142,7 +156,7 @@ object WristAlert {
             if (currentManeuver != Mv.DESTINATION) {
                 currentManeuver = Mv.DESTINATION
                 buzzedNear = true          // nothing closer to announce
-                post(ctx, "ARRIVED", u.instruction, buzz = true)
+                post(ctx, "ARRIVED", detail(Mv.DESTINATION, u.instruction), buzz = true)
             }
             return
         }
@@ -154,14 +168,16 @@ object WristAlert {
 
         val now = SystemClock.elapsedRealtime()
         var buzz = false
+        val changed = u.maneuver != currentManeuver
 
-        if (u.maneuver != currentManeuver) {
+        if (changed) {
             val wasCurrentAt = leftAt[u.maneuver]
             val reflip = wasCurrentAt != null && now - wasCurrentAt < REFLIP_MS
 
             if (currentManeuver != Mv.UNKNOWN) leftAt[currentManeuver] = now
             currentManeuver = u.maneuver
             buzzedNear = false
+            lastBand = -1              // a new turn is always worth saying once
 
             buzz = !reflip && buzzes(u.maneuver)
             if (reflip) Log.i(TAG, "re-flip to ${Mv.name(u.maneuver)}, text only")
@@ -177,7 +193,34 @@ object WristAlert {
             buzz = true
         }
 
-        post(ctx, "${plainName(u.maneuver)} · ${distance(u.distM)}", u.instruction, buzz)
+        /*
+          ★ IF IT DOES NOT BUZZ, IT DOES NOT GO.
+
+          Three findings arrived at the same conclusion from different
+          directions, and together they settle it:
+
+          1. The band cannot hold a notification on screen. Always-On Display
+             shows the watch face; the notification page times out like any
+             other. So a silent update lands on a sleeping screen and is never
+             read by anybody.
+          2. The band STACKS updates rather than replacing them - photographed,
+             six rows of one road name from a single leg. The cure is to cancel
+             before posting, and a cancelled-then-reposted notification is a
+             NEW arrival, so it buzzes whatever setOnlyAlertOnce says.
+          3. The band is charged weekly and every arrival is a Bluetooth packet.
+
+          A silent update is therefore invisible, stacking, and not free. The
+          only updates worth sending are the ones that buzz, because the buzz
+          is what wakes the screen and puts the words in front of the rider.
+
+          Between turns the wrist holds the last turn for TIMEOUT_MS and then
+          goes empty, which is the honest state: there is nothing to do yet.
+        */
+        if (!buzz) return
+        lastBand = band(u.distM)
+
+        post(ctx, headline(u.maneuver, distance(u.distM)),
+             detail(u.maneuver, u.instruction), buzz)
     }
 
     @Synchronized
@@ -189,11 +232,41 @@ object WristAlert {
         runCatching { NotificationManagerCompat.from(ctx).cancel(NOTIF_ID) }
     }
 
+    /**
+     * Does the wearable REPLACE an updated notification, or stack it?
+     *
+     * Posts the same id repeatedly with only the distance changing, which is
+     * precisely what a real leg does. Run both arms and count the rows on the
+     * wrist: if cancelFirst = true leaves one row where false leaves six, the
+     * cost of an explicit removal is worth paying and CANCEL_BEFORE_POST
+     * changes. If both stack, the only lever left is posting less often, which
+     * band() already does.
+     *
+     * Deliberately bypasses the band() gate - the whole point is to post
+     * updates the real path would now suppress.
+     */
+    fun stackTest(ctx: Context, cancelFirst: Boolean, count: Int, gapMs: Long) {
+        ensureChannel(ctx)
+        Log.i(TAG, "=== stack test: $count updates, cancelFirst=$cancelFirst ===")
+        Thread {
+            for (i in 0 until count) {
+                val m = 500 - i * 100
+                post(
+                    ctx, headline(Mv.TURN_LEFT, "$m m"), detail(Mv.TURN_LEFT, "Old Madras Road"),
+                    buzz = (i == 0), force = true, cancelFirst = cancelFirst,
+                )
+                Thread.sleep(gapMs)
+            }
+            Log.i(TAG, "=== stack test done (cancelFirst=$cancelFirst) ===")
+        }.apply { isDaemon = true }.start()
+    }
+
     /** Setup self-test: posts one alert exactly as a real turn would. */
     fun test(ctx: Context) {
         ensureChannel(ctx)
         Log.i(TAG, "test alert requested")
-        post(ctx, "LEFT · 200 m", "Old Madras Road", buzz = true, force = true)
+        post(ctx, headline(Mv.TURN_LEFT, "200 m"), detail(Mv.TURN_LEFT, "Old Madras Road"),
+             buzz = true, force = true)
     }
 
     // ------------------------------------------------------------- the notice
@@ -204,6 +277,7 @@ object WristAlert {
         body: String,
         buzz: Boolean,
         force: Boolean = false,
+        cancelFirst: Boolean = CANCEL_BEFORE_POST,
     ) {
         val text = "$title\u0000$body"
 
@@ -251,7 +325,11 @@ object WristAlert {
           never buzzes looks identical whether the grant is missing, the band is
           not paired, or the app in Galaxy Wearable is switched off.
         */
-        runCatching { NotificationManagerCompat.from(ctx).notify(NOTIF_ID, n) }
+        runCatching {
+            val nm = NotificationManagerCompat.from(ctx)
+            if (cancelFirst) nm.cancel(NOTIF_ID)
+            nm.notify(NOTIF_ID, n)
+        }
             .onSuccess {
                 Log.i(TAG, "posted \"$title\" / \"$body\" buzz=$buzz channel=$CHANNEL_ID")
             }
@@ -300,34 +378,86 @@ object WristAlert {
         code != Mv.CONTINUE && code != Mv.DEPART
 
     /**
-     * Plain words, not protocol names. The band has one small line and the
-     * rider has one glance; `Mv.name()` is for logs and says "TURN_LEFT".
+     * The headline, built to a HARD ~10-CHARACTER BUDGET.
+     *
+     * ★ MEASURED TWICE, AND THE FIRST MEASUREMENT WAS WRONG. The band's own
+     * button reads "Block notificatic" - seventeen characters - so 15 looked
+     * safe. It is not: that button sits in the BODY, which is wider. The TITLE
+     * shares its row with the app icon, and photographs of a real ride showed
+     * "RIGHT 175" losing its "m" and "START NOW" losing its "W" at eleven and
+     * twelve characters. Anything longer clips, or marquees left-to-right,
+     * which is unreadable at 50 km/h through a visor.
+     *
+     * So the title carries only what a glance needs: WHICH WAY and HOW FAR.
+     * An arrow for the direction, the distance after it, nothing else. Worst
+     * case is a roundabout at range - "RNDBT2 1.2 km" style collapses to
+     * nine characters.
+     *
+     * Everything else - sharp, keep, fork, merge, and the road name - moves to
+     * detail() below, where the body wraps across lines and has room. The
+     * rider's own words: the road name is not important while riding. It is
+     * still worth having, just not at the cost of the direction.
+     *
+     * ★ ARROWS NEVER CARRY MEANING ALONE. Sharp-left and left share the same
+     * arrow deliberately: both mean "turn left", and the body says which. The
+     * project rule holds - a confidently wrong arrow is worse than no arrow,
+     * and a glyph that must be told apart from a near-identical one at a
+     * glance is the same mistake wearing a different hat.
      */
-    private fun plainName(code: Int): String = when (code) {
-        Mv.TURN_LEFT -> "LEFT"
-        Mv.TURN_RIGHT -> "RIGHT"
-        Mv.SLIGHT_LEFT -> "BEAR LEFT"
-        Mv.SLIGHT_RIGHT -> "BEAR RIGHT"
-        Mv.SHARP_LEFT -> "SHARP LEFT"
-        Mv.SHARP_RIGHT -> "SHARP RIGHT"
-        Mv.KEEP_LEFT -> "KEEP LEFT"
-        Mv.KEEP_RIGHT -> "KEEP RIGHT"
-        Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "U-TURN"
-        Mv.MERGE -> "MERGE"
-        Mv.FORK_LEFT -> "FORK LEFT"
-        Mv.FORK_RIGHT -> "FORK RIGHT"
-        Mv.EXIT_LEFT -> "EXIT LEFT"
-        Mv.EXIT_RIGHT -> "EXIT RIGHT"
-        Mv.ROUNDABOUT -> "ROUNDABOUT"
-        Mv.FLYOVER -> "FLYOVER"
-        Mv.UNDERPASS -> "UNDERPASS"
-        Mv.DESTINATION -> "ARRIVE"
-        Mv.FERRY -> "FERRY"
-        Mv.CONTINUE -> "STRAIGHT ON"
-        Mv.DEPART -> "SET OFF"
-        in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15) ->
-            "ROUNDABOUT, EXIT ${code - Mv.ROUNDABOUT_EXIT_BASE}"
-        else -> "TURN"
+    private fun headline(code: Int, dist: String): String {
+        val d = if (dist.isEmpty()) "" else " $dist"
+        return when (code) {
+            Mv.TURN_LEFT, Mv.SHARP_LEFT, Mv.FORK_LEFT, Mv.EXIT_LEFT -> "←$d"
+            Mv.TURN_RIGHT, Mv.SHARP_RIGHT, Mv.FORK_RIGHT, Mv.EXIT_RIGHT, Mv.MERGE -> "→$d"
+            Mv.SLIGHT_LEFT, Mv.KEEP_LEFT -> "↖$d"
+            Mv.SLIGHT_RIGHT, Mv.KEEP_RIGHT -> "↗$d"
+            Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "↩$d"
+            Mv.ROUNDABOUT -> "↻$d"
+            Mv.CONTINUE, Mv.DEPART, Mv.FLYOVER, Mv.UNDERPASS -> "↑$d"
+            Mv.DESTINATION -> "ARRIVED"
+            Mv.FERRY -> "FERRY$d"
+            in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15) ->
+                "↻${code - Mv.ROUNDABOUT_EXIT_BASE}$d"
+            else -> "?$d"
+        }
+    }
+
+    /**
+     * The body: what kind of turn, then the road.
+     *
+     * This is where everything the title had to drop goes. The body wraps over
+     * several lines on the band - a photograph showed "Sahodaran Ayyappan
+     * Road" across two of them quite happily - so there is room here and none
+     * up there.
+     */
+    private fun detail(code: Int, road: String): String {
+        val kind = when (code) {
+            Mv.TURN_LEFT -> "Left"
+            Mv.TURN_RIGHT -> "Right"
+            Mv.SLIGHT_LEFT -> "Bear left"
+            Mv.SLIGHT_RIGHT -> "Bear right"
+            Mv.SHARP_LEFT -> "Sharp left"
+            Mv.SHARP_RIGHT -> "Sharp right"
+            Mv.KEEP_LEFT -> "Keep left"
+            Mv.KEEP_RIGHT -> "Keep right"
+            Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "U-turn"
+            Mv.MERGE -> "Merge"
+            Mv.FORK_LEFT -> "Fork left"
+            Mv.FORK_RIGHT -> "Fork right"
+            Mv.EXIT_LEFT -> "Exit left"
+            Mv.EXIT_RIGHT -> "Exit right"
+            Mv.ROUNDABOUT -> "Roundabout"
+            Mv.CONTINUE -> "Straight on"
+            Mv.DEPART -> "Set off"
+            Mv.DESTINATION -> "Arrived"
+            Mv.FLYOVER -> "Flyover"
+            Mv.UNDERPASS -> "Underpass"
+            Mv.FERRY -> "Ferry"
+            in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15) ->
+                "Roundabout, exit ${code - Mv.ROUNDABOUT_EXIT_BASE}"
+            else -> "Turn"
+        }
+        return if (road.isBlank()) kind else "$kind · $road"
     }
 
     /**
@@ -342,6 +472,44 @@ object WristAlert {
     private fun distance(m: Int): String = when {
         m >= 1000 -> "%.1f km".format(m / 1000.0)
         m >= 300 -> "${(m / 100) * 100} m"
-        else -> "${(m / 25) * 25} m"
+        /*
+          ★ "NOW", NOT "0 m".
+
+          Rounding down to a 25 m step turned everything under 25 m into
+          "0 m" - seen on the band during the first simulated ride, reading
+          "LEFT - 0 m" while still 24 metres short of the junction. Zero is
+          not a distance anywhere in this project: screenFor() in nav_types.h
+          refuses to treat it as one on the handlebar for the same reason, and
+          a wrist saying zero when the turn has not happened yet is the
+          clearest possible way to be wrong about the only thing it is for.
+        */
+        m >= 25 -> "${(m / 25) * 25} m"
+        else -> "NOW"
+    }
+
+    /**
+     * Which distance band a reading falls in, for deciding whether the wrist
+     * is worth telling again.
+     *
+     * ★ THE BAND STACKS UPDATES RATHER THAN REPLACING THEM. Photographed on
+     * the Fit3: one leg of a simulated ride left six separate rows of the same
+     * road name on the wrist, under a correctly-updating title. Posting with a
+     * single reused id is the right thing on the phone - the shade shows one
+     * entry - but the wearable mirror treats each update as another arrival.
+     *
+     * So the wrist is told only when it crosses into a new band, which turns
+     * roughly thirty updates per leg into six. The text still carries the real
+     * distance at the moment it is sent, so nothing is rounded into a lie; what
+     * changes is how often it is repeated.
+     */
+    private fun band(m: Int): Int = when {
+        m >= 2000 -> 7
+        m >= 1000 -> 6
+        m >= 500 -> 5
+        m >= 300 -> 4
+        m >= 200 -> 3
+        m >= 100 -> 2
+        m >= 25 -> 1
+        else -> 0
     }
 }

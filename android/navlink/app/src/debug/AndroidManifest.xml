@@ -16,6 +16,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.jiffytrails.navlink.TEST_WRIST" />
+                <action android:name="com.jiffytrails.navlink.TEST_RIDE" />
+                <action android:name="com.jiffytrails.navlink.TEST_STACK" />
             </intent-filter>
         </receiver>
     </application>
