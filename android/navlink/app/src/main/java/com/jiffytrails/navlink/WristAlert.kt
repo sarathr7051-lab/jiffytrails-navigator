@@ -251,7 +251,12 @@ object WristAlert {
 
         // Hold, do not guess. Both are transient and the wrist keeps the last
         // true thing it was told - the same rule the display follows.
-        if (u.rerouting) return
+        if (u.rerouting) {
+            // Never seen on a real ride. Logged so the first one tells us what
+            // Maps actually does here instead of us guessing afterwards.
+            RideLog.line(ctx, "rerouting - holding last turn")
+            return
+        }
         if (u.maneuver == Mv.UNKNOWN) return
 
         val now = clock()
@@ -260,6 +265,7 @@ object WristAlert {
         if (changed) {
             val wasCurrentAt = leftAt[u.maneuver]
             val reflip = wasCurrentAt != null && now - wasCurrentAt < REFLIP_MS
+            if (currentManeuver == Mv.UNKNOWN) RideLog.session(ctx, "navigation started")
             if (currentManeuver != Mv.UNKNOWN) leftAt[currentManeuver] = now
             currentManeuver = u.maneuver
             if (!reflip) {
@@ -303,6 +309,15 @@ object WristAlert {
         lastDistM = u.distM
         lastDistAtMs = now
 
+        // Every update, not just the ones that buzz: the raw distance stream and
+        // what the estimator made of it are the whole point of recording a ride.
+        RideLog.line(
+            ctx,
+            "%-14s %5d m  v=%4.1f m/s  %s".format(
+                Mv.name(u.maneuver), u.distM, speedMps, u.instruction,
+            ),
+        )
+
         if (!buzzes(u.maneuver) || u.distM <= 0) return
 
         val mps = if (speedMps >= MIN_MPS) speedMps else DEFAULT_MPS
@@ -319,6 +334,7 @@ object WristAlert {
             firedMask = firedMask or bit
             if (i != last && lastBuzzAtMs != 0L && now - lastBuzzAtMs < MIN_GAP_MS) {
                 Log.i(TAG, "  (${THRESHOLDS_S[i]}s crossed too soon after the last - silent)")
+                RideLog.line(ctx, "  SILENT ${THRESHOLDS_S[i]}s suppressed by the gap rule")
                 continue
             }
             buzz = true
@@ -327,12 +343,19 @@ object WristAlert {
         lastBuzzAtMs = now
 
         Log.i(TAG, "%d m at %.1f m/s = %.0f s to turn".format(u.distM, mps, secs))
+        RideLog.line(
+            ctx,
+            "BUZZ %s  %d m at %.1f m/s = %.0f s to turn".format(
+                Mv.name(u.maneuver), u.distM, mps, secs,
+            ),
+        )
         post(ctx, headline(u.maneuver, distance(u.distM)),
              detail(u.maneuver, u.instruction), buzz = true)
     }
 
     @Synchronized
     fun clear(ctx: Context) {
+        if (currentManeuver != Mv.UNKNOWN) RideLog.line(ctx, "navigation ended, wrist cleared")
         currentManeuver = Mv.UNKNOWN
         firedMask = 0
         lastPosted = null
