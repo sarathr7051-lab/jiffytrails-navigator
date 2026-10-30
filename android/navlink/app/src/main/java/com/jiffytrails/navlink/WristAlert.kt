@@ -1,6 +1,5 @@
 package com.jiffytrails.navlink
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -15,109 +14,191 @@ import androidx.core.app.NotificationManagerCompat
 /**
  * The turn, on a wrist band, as an ORDINARY notification.
  *
- * Why this exists at all: the Galaxy Fit3 mirrors normal notifications and
- * nothing else. Google Maps' navigation notification is an ongoing/live one, so
- * Maps does not even appear in Galaxy Wearable's per-app list — there is no
- * setting to turn on, and no amount of configuration will produce one. NavLink
- * already parses every turn for the handlebar display, so the cheapest path to
- * a wrist buzz is for NavLink to post its own plain notification that the band
- * is willing to mirror.
+ * Why this exists: the Galaxy Fit3 mirrors normal notifications and nothing
+ * else. Google Maps' navigation notification is an ongoing/live one, so Maps
+ * does not even appear in Galaxy Wearable's per-app list - there is no setting
+ * to turn on. NavLink already parses every turn for the handlebar display, so
+ * it posts its own plain notification that the band is willing to mirror.
  *
- * ★ THIS IS A BACKUP PATH AND MUST BEHAVE LIKE ONE.
+ * ★ A BACKUP PATH, AND IT BEHAVES LIKE ONE. The handlebar display is the
+ * instrument. Everything here runs AFTER the BLE write, wrapped by the caller,
+ * so a failure in this file can never delay or break the display. Where the two
+ * disagree the display is right: it carries the exact distance, this rounds.
  *
- * The handlebar display is the primary instrument. Everything here is called
- * AFTER the BLE write and wrapped by the caller, so a failure in this file can
- * never delay or break the display. If the two ever disagree, the display is
- * right: it carries the exact distance, this rounds.
+ * ★ EVERYTHING BELOW WAS MEASURED ON THE BAND, AND EVERY UNTESTED ASSUMPTION
+ * CAME BACK WRONG. In order:
  *
- * ★ THE BATTERY RULE, WHICH SHAPES MOST OF THE DESIGN
+ *  - The title is about TEN characters, not seventeen. The band's own button
+ *    reads "Block notificatic", but that sits in the body, which is wider; the
+ *    title shares its row with the app icon. Photographs of a real ride caught
+ *    "RIGHT 175" losing its "m".
+ *  - The band STACKS updates rather than replacing them - six rows of one road
+ *    name from a single leg. Cancelling before posting cures it, and a
+ *    cancelled-then-reposted notification is a NEW arrival, so an update can no
+ *    longer be made silent.
+ *  - The band cannot hold a notification on screen. Always-On Display shows the
+ *    watch face, and AOD costs 13 days of battery down to 3.5. So a silent
+ *    update lands on a sleeping screen and is read by nobody.
  *
- * The band is charged about once a week and its notification list is kept
- * deliberately short. Every buzz and every silent update is a Bluetooth packet
- * to the wrist, so:
- *
- *   - at most TWO buzzes per maneuver: once when the turn becomes the next one,
- *     and once when it first comes inside BUZZ_NEAR_M;
- *   - "straight on" never buzzes at all;
- *   - the text is re-posted only when the words would actually change, which is
- *     why the distance is shown on a coarse ladder rather than at the 10 m
- *     granularity Maps gives below 300 m. At 10 m steps the last 300 m of every
- *     leg would be thirty wrist updates.
- *
- * ★ WHAT IT REFUSES TO SAY
- *
- * Maps' stream is noisy in three specific ways, all of them recorded in
- * docs/NAV_DATA.md, and each one would otherwise reach the wrist as a spurious
- * buzz:
- *
- *   - `progressMax` drifts (851 -> 1196 -> 804 observed in one journey). Nothing
- *     here reads it. The band is told about the next maneuver and its distance,
- *     never about distance remaining, so the drift has nothing to land on.
- *   - UNKNOWN maneuvers and `rerouting` blips arrive mid-route. Both leave the
- *     wrist showing whatever it already had rather than guessing - the same rule
- *     the display follows, for the same reason: a confidently wrong arrow is
- *     worse than no arrow.
- *   - Maps flips between two maneuvers and back within a few seconds. Returning
- *     to a maneuver that was current less than REFLIP_MS ago updates the text
- *     but does not buzz again.
+ * Those three together force the design: nothing is sent unless it buzzes,
+ * because the buzz is what wakes the screen and puts the words in front of the
+ * rider. Between turns the wrist holds the last turn for TIMEOUT_MS and then
+ * goes empty, which is the honest state - there is nothing to do yet.
  */
 object WristAlert {
 
     private const val TAG = "NAVLINK/wrist"
 
-    /** Shown to the user in Settings and in Galaxy Wearable's per-app list. */
-    const val CHANNEL_ID = "wrist_turns"
+    /*
+      ★ v2 BECAUSE A CHANNEL IS IMMUTABLE ONCE CREATED. Android will not let an
+      app change an existing channel's vibration - only the user can - so a new
+      pattern needs a new id, and the old channel is deleted on first use.
+      Galaxy Wearable's switch is per APP, not per channel, so the band does not
+      need re-enabling.
+    */
+    private const val CHANNEL_ID_V1 = "wrist_turns"
+    const val CHANNEL_ID = "wrist_turns_v2"
     const val CHANNEL_NAME = "Wrist turn alerts"
 
     /**
      * One id, reused forever. The wrist must hold exactly one turn - the
-     * current one - and posting under a fresh id per maneuver would leave a
-     * scrollable history of turns already taken on the band.
+     * current one - and a fresh id per maneuver would leave a scrollable
+     * history of turns already taken.
      */
     const val NOTIF_ID = 0x5731
 
     private const val PREFS = "navlink"
     private const val KEY_ENABLED = "wrist_alerts_enabled"
 
-    /** The second buzz: the turn is close enough to act on. */
-    private const val BUZZ_NEAR_M = 200
+    /*
+      ★ SECONDS TO THE TURN, NOT METRES TO IT.
+
+      This used to buzz when a turn became current and again at 200 m, and a
+      real ride showed that wrong twice over. 200 m is sixteen seconds at
+      45 km/h, nine at 80, and thirty-six in slow traffic - the same warning
+      arrives far too late on an open road and far too early in a jam. And on a
+      900 m leg the two buzzes sat 58 seconds apart, a long silence when you are
+      trying not to miss a junction.
+
+      So the warnings are placed in TIME, against the speed the rider is
+      actually doing, measured from how fast the distance is closing. The same
+      three moments then mean the same thing at any speed:
+
+        120 s - there is a turn coming, and what kind
+         45 s - get into position for it
+         15 s - it is now
+
+      At 45 km/h those land near 1500 m, 560 m and 190 m. In traffic at 18 km/h,
+      600 m, 225 m and 75 m. At 70 km/h, 2.3 km, 875 m and 290 m. The rider gets
+      the same time to react on every road.
+    */
+    private val THRESHOLDS_S = intArrayOf(120, 45, 15)
+
+    /*
+      ★ NO TWO WARNINGS CLOSER TOGETHER THAN THIS, except the last one.
+
+      Found by dry-running the thresholds before they reached a wrist. If a turn
+      appears when it is ALREADY inside 120 s - which is most turns in a city -
+      that threshold fires at once and the 45 s one lands seconds later. At a
+      steady 45 km/h the two came 8 seconds apart: a double-buzz saying nothing
+      new, which trains a rider to ignore it.
+
+      The final warning is exempt. It means "now", and a rider who has just been
+      told about a turn still needs telling when to act on it.
+    */
+    private const val MIN_GAP_MS = 20_000L
+
+    /** Until the distance has moved twice there is nothing to measure. */
+    private const val DEFAULT_MPS = 12.5        // 45 km/h
+
+    /** Below this the rider is stopped; time-to-turn would be meaningless. */
+    private const val MIN_MPS = 1.5
+    private const val MAX_MPS = 40.0
 
     /** A maneuver seen again within this window is a Maps flicker, not a turn. */
     private const val REFLIP_MS = 20_000L
 
     /**
-     * Android removes the notification itself after this.
+     * How long the turn stays available on the wrist.
      *
-     * The failure this guards is specific: if the app is killed, the phone
-     * loses the listener, or the ride simply ends without a clean
-     * nav_active = 0, a stale turn would otherwise sit on the wrist
-     * indefinitely. Sixty seconds is longer than any gap between Maps updates
-     * on a live route and short enough that a dead route clears itself.
+     * ★ 120 s, NOT 60. The band flashes a notification for a few seconds then
+     * returns to the watch face, and no setting lengthens that - only the
+     * general Screen timeout exists, and Samsung's manual does not say
+     * notifications follow it. So a rider who misses the flash has to raise a
+     * wrist and swipe back, and this is how long they have. Still short enough
+     * that a dead app clears itself rather than leaving a turn already taken.
      */
     private const val TIMEOUT_MS = 120_000L
 
-    // ------------------------------------------------------------------ state
+    /*
+      ★ EMOJI ARROWS, NOT TEXT ARROWS, AND THAT IS THE POINT.
 
-    private var currentManeuver = Mv.UNKNOWN
-    private var buzzedNear = false
-    private var lastPosted: String? = null
-    private var lastBand = -1
+      The rider's words: in daylight at riding speed the arrow is still small.
+      The band draws the title in its own font at its own size and no app can
+      change that - but it draws EMOJI far larger than text glyphs, and in
+      colour. U+2190 is a thin monochrome character the height of a letter;
+      the emoji form is a filled graphic many times its area, for the same one
+      position in the string.
+
+      U+FE0F is a variation selector meaning "draw the emoji form, not the text
+      form". Without it a renderer may fall back to the small monochrome glyph,
+      which is precisely what we are getting away from.
+
+      No arrow ever carries meaning alone - detail() spells the turn out in
+      words underneath - so if a firmware refuses to draw these, nothing is lost
+      but size.
+    */
+    private const val L_ARROW = "⬅️"
+    private const val R_ARROW = "➡️"
+    private const val UP_ARROW = "⬆️"
+    private const val UL_ARROW = "↖️"
+    private const val UR_ARROW = "↗️"
+    private const val U_TURN = "↩️"
+    private const val RNDBT = "🔄"
+    private const val FLAG = "🏁"
 
     /**
      * Cancel the old notification before posting the new one.
      *
-     * An experiment, default off. The band stacks updates (see band() below),
-     * and an explicit removal before each arrival is the obvious thing to try -
-     * it is literally "clear the previous one, then post the next". The cost if
-     * it works is that a cancelled-then-reposted notification is a NEW arrival
-     * rather than an update, so setOnlyAlertOnce can no longer keep a silent
-     * update silent, and every refresh would buzz. Measured before shipping
-     * either way; WristTestReceiver's TEST_STACK runs both arms.
+     * ★ ON, because the band stacks otherwise. The cost is that a
+     * cancelled-then-reposted notification is a NEW arrival, so setOnlyAlertOnce
+     * can no longer keep an update silent - and that cost is now zero, because
+     * nothing is sent unless it is meant to buzz.
      */
     private const val CANCEL_BEFORE_POST = true
 
+    // ------------------------------------------------------------------ state
+
+    private var currentManeuver = Mv.UNKNOWN
+    private var lastPosted: String? = null
+
+    /** One bit per entry in THRESHOLDS_S, cleared when the maneuver changes. */
+    private var firedMask = 0
+
+    // Speed, measured rather than assumed: how fast the distance is closing.
+    private var lastDistM = -1
+    private var lastDistAtMs = 0L
+    private var speedMps = 0.0
+    private var lastBuzzAtMs = 0L
+
     /** maneuver code -> elapsedRealtime when it stopped being current. */
     private val leftAt = HashMap<Int, Long>()
+
+    /**
+     * Log the decision without posting it. Lets a whole ride - or a dozen rides
+     * at different speeds - run through the REAL logic in a millisecond, so the
+     * thresholds can be tuned without buzzing anybody's wrist.
+     */
+    @Volatile
+    var dryRun = false
+
+    /**
+     * Where "now" comes from. Swappable because the speed estimate is measured
+     * against this clock, so a dry run with a frozen clock would measure
+     * nothing and every threshold would read as unreached.
+     */
+    @Volatile
+    var clock: () -> Long = { SystemClock.elapsedRealtime() }
 
     // ----------------------------------------------------------------- on/off
 
@@ -137,16 +218,14 @@ object WristAlert {
     /**
      * Called for every parsed update, after the BLE write.
      *
-     * Synchronized because the notification listener's callbacks and the 1 Hz
-     * poller are not guaranteed to be the same thread, and the re-flip and
-     * once-only rules below are all read-modify-write on shared state.
+     * Synchronized because the listener's callbacks and the 1 Hz poller are not
+     * guaranteed to share a thread, and the threshold and speed rules are all
+     * read-modify-write on shared state.
      */
     @Synchronized
     fun onUpdate(ctx: Context, u: NavUpdate) {
         if (!isEnabled(ctx)) return
 
-        // End of route. Covers both the explicit nav_active = 0 the parser
-        // emits and a route that simply stops being active.
         if (!u.navActive) {
             clear(ctx)
             return
@@ -155,95 +234,111 @@ object WristAlert {
         if (u.arrived) {
             if (currentManeuver != Mv.DESTINATION) {
                 currentManeuver = Mv.DESTINATION
-                buzzedNear = true          // nothing closer to announce
-                post(ctx, "ARRIVED", detail(Mv.DESTINATION, u.instruction), buzz = true)
+                firedMask = -1          // nothing closer left to announce
+                post(ctx, headline(Mv.DESTINATION, ""),
+                     detail(Mv.DESTINATION, u.instruction), buzz = true)
             }
             return
         }
 
-        // Hold, do not guess. Both of these are transient and the wrist keeps
-        // the last true thing it was told.
+        // Hold, do not guess. Both are transient and the wrist keeps the last
+        // true thing it was told - the same rule the display follows.
         if (u.rerouting) return
         if (u.maneuver == Mv.UNKNOWN) return
 
-        val now = SystemClock.elapsedRealtime()
-        var buzz = false
+        val now = clock()
         val changed = u.maneuver != currentManeuver
 
         if (changed) {
             val wasCurrentAt = leftAt[u.maneuver]
             val reflip = wasCurrentAt != null && now - wasCurrentAt < REFLIP_MS
-
             if (currentManeuver != Mv.UNKNOWN) leftAt[currentManeuver] = now
             currentManeuver = u.maneuver
-            buzzedNear = false
-            lastBand = -1              // a new turn is always worth saying once
+            if (!reflip) {
+                firedMask = 0
+                /*
+                  ★ AND THE GAP RULE RESETS WITH IT.
 
-            buzz = !reflip && buzzes(u.maneuver)
-            if (reflip) Log.i(TAG, "re-flip to ${Mv.name(u.maneuver)}, text only")
-        }
-
-        // The close-approach buzz, once per maneuver. Guarded on distM > 0
-        // because Maps reports "0 m" whenever the next maneuver is where you
-        // already are - most obviously at departure, with kilometres still to
-        // run. The display learned this the same way; see screenFor() in
-        // nav_types.h.
-        if (!buzzedNear && u.distM in 1 until BUZZ_NEAR_M && buzzes(u.maneuver)) {
-            buzzedNear = true
-            buzz = true
+                  Dry-running caught this: the minimum gap was measured across
+                  the boundary between two turns, so a roundabout arriving just
+                  after the previous turn's "now" buzz had its FIRST warning
+                  swallowed, and was announced only 15 seconds before the rider
+                  had to act. The gap stops one turn being announced twice in a
+                  breath; it must never stop a new turn being announced at all.
+                */
+                lastBuzzAtMs = 0L
+            }
+            lastDistM = -1              // speed carries over; the baseline cannot
+            if (reflip) Log.i(TAG, "re-flip to ${Mv.name(u.maneuver)}, thresholds kept")
         }
 
         /*
-          ★ IF IT DOES NOT BUZZ, IT DOES NOT GO.
+          Measure the speed rather than assume it.
 
-          Three findings arrived at the same conclusion from different
-          directions, and together they settle it:
-
-          1. The band cannot hold a notification on screen. Always-On Display
-             shows the watch face; the notification page times out like any
-             other. So a silent update lands on a sleeping screen and is never
-             read by anybody.
-          2. The band STACKS updates rather than replacing them - photographed,
-             six rows of one road name from a single leg. The cure is to cancel
-             before posting, and a cancelled-then-reposted notification is a
-             NEW arrival, so it buzzes whatever setOnlyAlertOnce says.
-          3. The band is charged weekly and every arrival is a Bluetooth packet.
-
-          A silent update is therefore invisible, stacking, and not free. The
-          only updates worth sending are the ones that buzz, because the buzz
-          is what wakes the screen and puts the words in front of the rider.
-
-          Between turns the wrist holds the last turn for TIMEOUT_MS and then
-          goes empty, which is the honest state: there is nothing to do yet.
+          Distance to the next turn closes at road speed, so the difference
+          between two updates IS the speed, and it costs no sensor, no
+          permission and no battery. Smoothed hard because Maps quantises
+          distance - 10 m steps below 300 m - so a single pair of readings can
+          be 12% out at a dead steady speed; measured at 14.0 m/s against a true
+          12.5. Absurd values are discarded rather than smoothed in: a reroute
+          or a GPS jump can make the distance leap.
         */
-        if (!buzz) return
-        lastBand = band(u.distM)
+        if (lastDistM > 0 && u.distM in 1 until lastDistM) {
+            val dt = (now - lastDistAtMs) / 1000.0
+            if (dt >= 0.5) {
+                val v = (lastDistM - u.distM) / dt
+                if (v in MIN_MPS..MAX_MPS) {
+                    speedMps = if (speedMps < MIN_MPS) v else 0.85 * speedMps + 0.15 * v
+                }
+            }
+        }
+        lastDistM = u.distM
+        lastDistAtMs = now
 
+        if (!buzzes(u.maneuver) || u.distM <= 0) return
+
+        val mps = if (speedMps >= MIN_MPS) speedMps else DEFAULT_MPS
+        val secs = u.distM / mps
+
+        // Fire every threshold crossed, once each. A turn that appears already
+        // inside fifteen seconds trips all three at once and still buzzes
+        // exactly once, which is right: there is only one thing left to say.
+        var buzz = false
+        val last = THRESHOLDS_S.size - 1
+        for (i in THRESHOLDS_S.indices) {
+            val bit = 1 shl i
+            if (firedMask and bit != 0 || secs > THRESHOLDS_S[i]) continue
+            firedMask = firedMask or bit
+            if (i != last && lastBuzzAtMs != 0L && now - lastBuzzAtMs < MIN_GAP_MS) {
+                Log.i(TAG, "  (${THRESHOLDS_S[i]}s crossed too soon after the last - silent)")
+                continue
+            }
+            buzz = true
+        }
+        if (!buzz) return
+        lastBuzzAtMs = now
+
+        Log.i(TAG, "%d m at %.1f m/s = %.0f s to turn".format(u.distM, mps, secs))
         post(ctx, headline(u.maneuver, distance(u.distM)),
-             detail(u.maneuver, u.instruction), buzz)
+             detail(u.maneuver, u.instruction), buzz = true)
     }
 
     @Synchronized
     fun clear(ctx: Context) {
         currentManeuver = Mv.UNKNOWN
-        buzzedNear = false
+        firedMask = 0
         lastPosted = null
+        lastBuzzAtMs = 0L
+        lastDistM = -1
+        speedMps = 0.0
         leftAt.clear()
-        runCatching { NotificationManagerCompat.from(ctx).cancel(NOTIF_ID) }
+        if (!dryRun) runCatching { NotificationManagerCompat.from(ctx).cancel(NOTIF_ID) }
     }
 
     /**
-     * Does the wearable REPLACE an updated notification, or stack it?
-     *
-     * Posts the same id repeatedly with only the distance changing, which is
-     * precisely what a real leg does. Run both arms and count the rows on the
-     * wrist: if cancelFirst = true leaves one row where false leaves six, the
-     * cost of an explicit removal is worth paying and CANCEL_BEFORE_POST
-     * changes. If both stack, the only lever left is posting less often, which
-     * band() already does.
-     *
-     * Deliberately bypasses the band() gate - the whole point is to post
-     * updates the real path would now suppress.
+     * Does the wearable REPLACE an updated notification, or stack it? Posts the
+     * same id repeatedly with only the distance changing. Deliberately bypasses
+     * every gate - the point is to send what the real path now suppresses.
      */
     fun stackTest(ctx: Context, cancelFirst: Boolean, count: Int, gapMs: Long) {
         ensureChannel(ctx)
@@ -280,11 +375,13 @@ object WristAlert {
         cancelFirst: Boolean = CANCEL_BEFORE_POST,
     ) {
         val text = "$title\u0000$body"
-
-        // Re-posting identical words costs a Bluetooth packet to the wrist and
-        // buys nothing. A buzz always goes out, because that is the event.
         if (!force && !buzz && text == lastPosted) return
         lastPosted = text
+
+        if (dryRun) {
+            Log.i(TAG, "    DRY  \"$title\" / \"$body\"${if (buzz) "  BUZZ" else ""}")
+            return
+        }
 
         ensureChannel(ctx)
 
@@ -301,19 +398,16 @@ object WristAlert {
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             /*
-              ★ CATEGORY IS DELIBERATELY NOT SET.
-
-              NAVIGATION would be the honest label, and that is exactly the risk:
-              Samsung's mirroring is what we are trying to satisfy, and a
-              navigation-categorised notification is a plausible thing for it to
-              filter out - which is the situation this whole file exists to work
-              around. An uncategorised notification is the most ordinary thing
-              the band can be handed.
+              ★ CATEGORY IS DELIBERATELY NOT SET. NAVIGATION would be the honest
+              label, and that is exactly the risk: Samsung's mirroring is what we
+              are trying to satisfy, and a navigation-categorised notification is
+              a plausible thing for it to filter - which is the situation this
+              whole file exists to work around.
             */
             .setOngoing(false)          // ongoing is what the band refuses to mirror
             .setAutoCancel(true)
-            .setShowWhen(false)         // a clock on a wrist that has one already
-            .setOnlyAlertOnce(!buzz)    // false = buzz now; true = update in place
+            .setShowWhen(false)
+            .setOnlyAlertOnce(!buzz)
             .setTimeoutAfter(TIMEOUT_MS)
             .setContentIntent(tap)
             .build()
@@ -321,18 +415,16 @@ object WristAlert {
         /*
           On 33+ POST_NOTIFICATIONS is a runtime grant and posting without it
           throws nothing - it simply does not appear, on the phone or the wrist.
-          Caught and logged because silence is the failure mode: a wrist that
-          never buzzes looks identical whether the grant is missing, the band is
-          not paired, or the app in Galaxy Wearable is switched off.
+          Logged because silence is the failure mode: a wrist that never buzzes
+          looks identical whether the grant is missing, the band is unpaired, or
+          the app is switched off in Galaxy Wearable.
         */
         runCatching {
             val nm = NotificationManagerCompat.from(ctx)
             if (cancelFirst) nm.cancel(NOTIF_ID)
             nm.notify(NOTIF_ID, n)
         }
-            .onSuccess {
-                Log.i(TAG, "posted \"$title\" / \"$body\" buzz=$buzz channel=$CHANNEL_ID")
-            }
+            .onSuccess { Log.i(TAG, "posted \"$title\" / \"$body\" buzz=$buzz channel=$CHANNEL_ID") }
             .onFailure { Log.w(TAG, "post failed (POST_NOTIFICATIONS?): ${it.message}") }
     }
 
@@ -340,6 +432,7 @@ object WristAlert {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+        runCatching { nm.deleteNotificationChannel(CHANNEL_ID_V1) }
 
         val ch = NotificationChannel(
             CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH
@@ -347,14 +440,18 @@ object WristAlert {
             description = "The next turn, mirrored to a wrist band while riding."
             enableVibration(true)
             /*
-              Vibrate, but do not make a sound.
-
-              IMPORTANCE_HIGH is what gets the notification mirrored promptly and
-              buzzed rather than queued silently. The default sound that normally
-              comes with it is pure cost here: the phone is in a pocket under a
-              jacket and the rider is wearing a helmet, so a chime per turn is
-              heard by nobody and still wakes the screen. One line to change if
-              it is ever wanted.
+              ★ TWO SHORT PULSES, NOT ONE LONG BUZZ. The rider's words: one
+              continuous buzz "feels too long". Two short taps are also easier to
+              tell from an ordinary message without looking, which is the whole
+              job of a backup instrument.
+            */
+            vibrationPattern = longArrayOf(0, 140, 110, 140)
+            /*
+              Vibrate, but make no sound. IMPORTANCE_HIGH is what gets the
+              notification mirrored promptly rather than queued, but the default
+              sound that comes with it is pure cost: the phone is in a pocket
+              under a jacket and the rider is in a helmet, so a chime per turn is
+              heard by nobody and still wakes the screen.
             */
             setSound(null, null)
             enableLights(false)
@@ -371,53 +468,39 @@ object WristAlert {
      *
      * DEPART is included for the same reason: Maps draws it with the SAME icon
      * as continue-straight (NAV_DATA.md records one hash for both), it means
-     * "set off along this road", and buzzing a wrist to announce that the ride
-     * has started is the kind of notification that gets a band muted.
+     * "set off along this road", and buzzing a wrist to announce that a ride has
+     * started is how a band gets muted.
      */
     private fun buzzes(code: Int): Boolean =
         code != Mv.CONTINUE && code != Mv.DEPART
 
     /**
-     * The headline, built to a HARD ~10-CHARACTER BUDGET.
+     * The headline, to a HARD ~10-CHARACTER BUDGET - an arrow and a distance.
      *
-     * ★ MEASURED TWICE, AND THE FIRST MEASUREMENT WAS WRONG. The band's own
-     * button reads "Block notificatic" - seventeen characters - so 15 looked
-     * safe. It is not: that button sits in the BODY, which is wider. The TITLE
-     * shares its row with the app icon, and photographs of a real ride showed
-     * "RIGHT 175" losing its "m" and "START NOW" losing its "W" at eleven and
-     * twelve characters. Anything longer clips, or marquees left-to-right,
-     * which is unreadable at 50 km/h through a visor.
+     * Measured twice, and the first measurement was wrong. The band's own button
+     * reads "Block notificatic", seventeen characters, so 15 looked safe. It is
+     * not: that button is in the BODY, which is wider. The TITLE shares its row
+     * with the app icon, and photographs of a real ride showed "RIGHT 175"
+     * losing its "m" and "START NOW" losing its "W". Anything longer clips or
+     * marquees left-to-right, unreadable at 50 km/h through a visor.
      *
-     * So the title carries only what a glance needs: WHICH WAY and HOW FAR.
-     * An arrow for the direction, the distance after it, nothing else. Worst
-     * case is a roundabout at range - "RNDBT2 1.2 km" style collapses to
-     * nine characters.
-     *
-     * Everything else - sharp, keep, fork, merge, and the road name - moves to
-     * detail() below, where the body wraps across lines and has room. The
-     * rider's own words: the road name is not important while riding. It is
-     * still worth having, just not at the cost of the direction.
-     *
-     * ★ ARROWS NEVER CARRY MEANING ALONE. Sharp-left and left share the same
-     * arrow deliberately: both mean "turn left", and the body says which. The
-     * project rule holds - a confidently wrong arrow is worse than no arrow,
-     * and a glyph that must be told apart from a near-identical one at a
-     * glance is the same mistake wearing a different hat.
+     * Everything else - sharp, keep, fork, merge, and the road name - lives in
+     * detail(), where the body wraps and has room.
      */
     private fun headline(code: Int, dist: String): String {
         val d = if (dist.isEmpty()) "" else " $dist"
         return when (code) {
-            Mv.TURN_LEFT, Mv.SHARP_LEFT, Mv.FORK_LEFT, Mv.EXIT_LEFT -> "←$d"
-            Mv.TURN_RIGHT, Mv.SHARP_RIGHT, Mv.FORK_RIGHT, Mv.EXIT_RIGHT, Mv.MERGE -> "→$d"
-            Mv.SLIGHT_LEFT, Mv.KEEP_LEFT -> "↖$d"
-            Mv.SLIGHT_RIGHT, Mv.KEEP_RIGHT -> "↗$d"
-            Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "↩$d"
-            Mv.ROUNDABOUT -> "↻$d"
-            Mv.CONTINUE, Mv.DEPART, Mv.FLYOVER, Mv.UNDERPASS -> "↑$d"
-            Mv.DESTINATION -> "ARRIVED"
+            Mv.TURN_LEFT, Mv.SHARP_LEFT, Mv.FORK_LEFT, Mv.EXIT_LEFT -> "$L_ARROW$d"
+            Mv.TURN_RIGHT, Mv.SHARP_RIGHT, Mv.FORK_RIGHT, Mv.EXIT_RIGHT, Mv.MERGE -> "$R_ARROW$d"
+            Mv.SLIGHT_LEFT, Mv.KEEP_LEFT -> "$UL_ARROW$d"
+            Mv.SLIGHT_RIGHT, Mv.KEEP_RIGHT -> "$UR_ARROW$d"
+            Mv.UTURN_LEFT, Mv.UTURN_RIGHT -> "$U_TURN$d"
+            Mv.ROUNDABOUT -> "$RNDBT$d"
+            Mv.CONTINUE, Mv.DEPART, Mv.FLYOVER, Mv.UNDERPASS -> "$UP_ARROW$d"
+            Mv.DESTINATION -> "$FLAG ARRIVED"
             Mv.FERRY -> "FERRY$d"
             in (Mv.ROUNDABOUT_EXIT_BASE + 1)..(Mv.ROUNDABOUT_EXIT_BASE + 15) ->
-                "↻${code - Mv.ROUNDABOUT_EXIT_BASE}$d"
+                "$RNDBT${code - Mv.ROUNDABOUT_EXIT_BASE}$d"
             else -> "?$d"
         }
     }
@@ -425,10 +508,11 @@ object WristAlert {
     /**
      * The body: what kind of turn, then the road.
      *
-     * This is where everything the title had to drop goes. The body wraps over
-     * several lines on the band - a photograph showed "Sahodaran Ayyappan
-     * Road" across two of them quite happily - so there is room here and none
-     * up there.
+     * Where everything the title had to drop goes. The body wraps over several
+     * lines on the band - a photograph showed "Sahodaran Ayyappan Road" across
+     * two quite happily - so there is room here and none up there. The rider's
+     * words: the road name is not important while riding. It keeps its place,
+     * just not at the cost of the direction.
      */
     private fun detail(code: Int, road: String): String {
         val kind = when (code) {
@@ -463,53 +547,20 @@ object WristAlert {
     /**
      * A coarse ladder, and every step ROUNDS DOWN.
      *
-     * Two reasons for the coarseness, one for the direction. Coarse because
-     * each distinct string is a wrist update and Maps gives 10 m steps below
-     * 300 m, which would be thirty of them per leg. Down, because the error
-     * then always says the turn is nearer than it is - a rider who looks up
-     * early loses nothing, and one who looks up late has already missed it.
+     * Down, because the error then always says the turn is nearer than it is - a
+     * rider who looks up early loses nothing, one who looks up late has already
+     * missed it.
+     *
+     * ★ "NOW", NOT "0 m". Rounding down in 25 m steps turned everything under
+     * 25 m into "0 m", seen on the band reading "LEFT - 0 m" while still 24
+     * metres short of the junction. Zero is not a distance anywhere in this
+     * project; screenFor() in nav_types.h refuses to treat it as one on the
+     * handlebar for exactly the same reason.
      */
     private fun distance(m: Int): String = when {
         m >= 1000 -> "%.1f km".format(m / 1000.0)
         m >= 300 -> "${(m / 100) * 100} m"
-        /*
-          ★ "NOW", NOT "0 m".
-
-          Rounding down to a 25 m step turned everything under 25 m into
-          "0 m" - seen on the band during the first simulated ride, reading
-          "LEFT - 0 m" while still 24 metres short of the junction. Zero is
-          not a distance anywhere in this project: screenFor() in nav_types.h
-          refuses to treat it as one on the handlebar for the same reason, and
-          a wrist saying zero when the turn has not happened yet is the
-          clearest possible way to be wrong about the only thing it is for.
-        */
         m >= 25 -> "${(m / 25) * 25} m"
         else -> "NOW"
-    }
-
-    /**
-     * Which distance band a reading falls in, for deciding whether the wrist
-     * is worth telling again.
-     *
-     * ★ THE BAND STACKS UPDATES RATHER THAN REPLACING THEM. Photographed on
-     * the Fit3: one leg of a simulated ride left six separate rows of the same
-     * road name on the wrist, under a correctly-updating title. Posting with a
-     * single reused id is the right thing on the phone - the shade shows one
-     * entry - but the wearable mirror treats each update as another arrival.
-     *
-     * So the wrist is told only when it crosses into a new band, which turns
-     * roughly thirty updates per leg into six. The text still carries the real
-     * distance at the moment it is sent, so nothing is rounded into a lie; what
-     * changes is how often it is repeated.
-     */
-    private fun band(m: Int): Int = when {
-        m >= 2000 -> 7
-        m >= 1000 -> 6
-        m >= 500 -> 5
-        m >= 300 -> 4
-        m >= 200 -> 3
-        m >= 100 -> 2
-        m >= 25 -> 1
-        else -> 0
     }
 }

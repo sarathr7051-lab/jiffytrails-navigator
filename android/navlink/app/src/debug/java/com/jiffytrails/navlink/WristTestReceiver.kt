@@ -50,12 +50,13 @@ class WristTestReceiver : BroadcastReceiver() {
         const val ACTION_ONE = "com.jiffytrails.navlink.TEST_WRIST"
         const val ACTION_RIDE = "com.jiffytrails.navlink.TEST_RIDE"
         const val ACTION_STACK = "com.jiffytrails.navlink.TEST_STACK"
+        const val ACTION_SCENARIOS = "com.jiffytrails.navlink.TEST_SCENARIOS"
 
         /** Fast enough to sit through, slow enough to read a wrist. */
         private const val DEFAULT_STEP_MS = 1000
 
-        /** ~43 km/h, an honest city speed on a Speed 400. */
-        private const val SPEED_MPS = 12
+        /** An honest city speed on a Speed 400; override with --ei kmh. */
+        private const val DEFAULT_KMH = 45
 
         @Volatile
         private var riding = false
@@ -64,7 +65,12 @@ class WristTestReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ctx = context.applicationContext
         when (intent.action) {
-            ACTION_RIDE -> ride(ctx, intent.getIntExtra("step_ms", DEFAULT_STEP_MS))
+            ACTION_RIDE -> ride(
+                ctx,
+                intent.getIntExtra("step_ms", DEFAULT_STEP_MS),
+                intent.getIntExtra("kmh", DEFAULT_KMH),
+            )
+            ACTION_SCENARIOS -> scenarios(ctx)
             ACTION_STACK -> WristAlert.stackTest(
                 ctx,
                 cancelFirst = intent.getIntExtra("cancel", 0) == 1,
@@ -94,7 +100,8 @@ class WristTestReceiver : BroadcastReceiver() {
      * must buzz exactly twice, the roundabout must name its exit inside the
      * character budget, and arrival must buzz once and then clear the wrist.
      */
-    private fun ride(ctx: Context, stepMs: Int) {
+    private fun ride(ctx: Context, stepMs: Int, kmh: Int) {
+        val mps = kmh / 3.6          // metres closed per 1 Hz tick
         if (riding) {
             Log.i(TAG, "ride already running, ignoring")
             return
@@ -106,33 +113,40 @@ class WristTestReceiver : BroadcastReceiver() {
         // inside its window.
         Thread {
             try {
-                Log.i(TAG, "=== ride starting: ${SPEED_MPS * 36 / 10} km/h, ${stepMs} ms tick ===")
+                Log.i(TAG, "=== ride starting: $kmh km/h, ${stepMs} ms tick ===")
+                /*
+                  Honest city spacing: turns a few hundred metres to most of a
+                  kilometre apart, not the every-250-metres of a demo. The
+                  900 m leg is there on purpose - it is the longest realistic
+                  gap between the "next turn is a left" buzz and the "it is now"
+                  buzz, and the one that shows whether two buzzes per turn
+                  leaves too long a silence in the middle.
+                */
                 val legs = listOf(
-                    Triple(Mv.DEPART, "Panampilly Nagar", 150),
-                    Triple(Mv.TURN_RIGHT, "Sahodaran Ayyappan Road", 350),
-                    Triple(Mv.roundaboutExit(2), "Kundannoor Junction", 300),
-                    Triple(Mv.TURN_LEFT, "Old Madras Road", 250),
-                    Triple(Mv.SLIGHT_RIGHT, "Marine Drive", 200),
+                    Triple(Mv.DEPART, "Panampilly Nagar", 200),
+                    Triple(Mv.TURN_RIGHT, "Sahodaran Ayyappan Road", 600),
+                    Triple(Mv.TURN_LEFT, "Old Madras Road", 900),
+                    Triple(Mv.roundaboutExit(2), "Kundannoor Junction", 500),
                 )
 
-                var remaining = legs.sumOf { it.third }
+                var remaining = legs.sumOf { it.third }.toDouble()
                 for ((maneuver, road, length) in legs) {
-                    var d = length
+                    var d = length.toDouble()
                     while (d > 0) {
                         WristAlert.onUpdate(
                             ctx,
                             NavUpdate(
                                 maneuver = maneuver,
-                                distM = quantise(d),
+                                distM = quantise(d.toInt()),
                                 instruction = road,
                                 navActive = true,
-                                etaMin = (remaining / (SPEED_MPS * 60)).coerceAtLeast(1),
-                                remaining100m = remaining / 100,
+                                etaMin = (remaining / (mps * 60)).toInt().coerceAtLeast(1),
+                                remaining100m = (remaining / 100).toInt(),
                             ),
                         )
                         Thread.sleep(stepMs.toLong())
-                        d -= SPEED_MPS
-                        remaining -= SPEED_MPS
+                        d -= mps
+                        remaining -= mps
                     }
                 }
 
@@ -156,6 +170,81 @@ class WristTestReceiver : BroadcastReceiver() {
                 Log.w(TAG, "ride aborted: ${t.message}")
             } finally {
                 riding = false
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Every scenario, played through the REAL decision logic, posting nothing.
+     *
+     * The clock is advanced by hand rather than waited on, so twenty minutes
+     * of riding takes a millisecond and the whole set can be re-run after every
+     * tweak to the thresholds. What it is checking is not that code runs, but
+     * that a rider gets a useful amount of warning at every speed they might
+     * actually be doing - including the ones that break a distance-based rule:
+     * a jam, an open road, and a turn that appears when it is already close.
+     */
+    private fun scenarios(ctx: Context) {
+        Thread {
+            WristAlert.dryRun = true
+            var t = 0L
+            WristAlert.clock = { t }
+            try {
+                data class Leg(val mv: Int, val road: String, val m: Int)
+
+                fun run(name: String, kmhAt: (Int) -> Double, legs: List<Leg>) {
+                    WristAlert.clear(ctx)
+                    t += 60_000
+                    Log.i(TAG, "")
+                    Log.i(TAG, "######## $name")
+                    var tick = 0
+                    for (leg in legs) {
+                        var d = leg.m.toDouble()
+                        var guard = 0
+                        while (d > 0 && guard++ < 4000) {
+                            val kmh = kmhAt(tick)
+                            WristAlert.onUpdate(
+                                ctx,
+                                NavUpdate(
+                                    maneuver = leg.mv, distM = quantise(d.toInt()),
+                                    instruction = leg.road, navActive = true,
+                                ),
+                            )
+                            t += 1000
+                            tick++
+                            d -= kmh / 3.6
+                        }
+                    }
+                    WristAlert.onUpdate(ctx, NavUpdate(navActive = false))
+                }
+
+                val city = listOf(
+                    Leg(Mv.DEPART, "Panampilly Nagar", 200),
+                    Leg(Mv.TURN_RIGHT, "Sahodaran Ayyappan Road", 600),
+                    Leg(Mv.TURN_LEFT, "Old Madras Road", 900),
+                    Leg(Mv.roundaboutExit(2), "Kundannoor Junction", 500),
+                )
+
+                run("STEADY 45 km/h", { 45.0 }, city)
+                run("SLOW CITY 18 km/h - traffic", { 18.0 }, city)
+                run("OPEN ROAD 70 km/h", { 70.0 }, city)
+                run("ACCELERATING 20 -> 65 km/h", { i -> (20 + i * 0.4).coerceAtMost(65.0) }, city)
+                run("STOP-START - lights every 40 s", { i -> if ((i / 40) % 2 == 0) 35.0 else 2.0 }, city)
+                run("TURN APPEARS CLOSE - 150 m at 50 km/h", { 50.0 }, listOf(
+                    Leg(Mv.TURN_LEFT, "Chittoor Road", 150),
+                    Leg(Mv.TURN_RIGHT, "Banerji Road", 1800),
+                ))
+                run("LONG GAP - 3 km between turns at 55 km/h", { 55.0 }, listOf(
+                    Leg(Mv.TURN_RIGHT, "NH 66", 3000),
+                    Leg(Mv.TURN_LEFT, "Seaport Airport Road", 700),
+                ))
+                Log.i(TAG, "######## scenarios done")
+            } catch (e: Throwable) {
+                Log.w(TAG, "scenarios failed: ${e.message}")
+            } finally {
+                WristAlert.clock = { android.os.SystemClock.elapsedRealtime() }
+                WristAlert.dryRun = false
+                WristAlert.clear(ctx)
             }
         }.apply { isDaemon = true }.start()
     }
