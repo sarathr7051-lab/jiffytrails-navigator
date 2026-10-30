@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only additions. Merged into the main manifest for debug builds and
+  absent from release, which is what keeps the exported test receiver out of
+  anything that could be installed as a finished app.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!--
+          Exported so `adb shell am broadcast` can reach it. See the class
+          comment in WristTestReceiver.kt for why that is acceptable here and
+          nowhere else.
+        -->
+        <receiver
+            android:name=".WristTestReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.jiffytrails.navlink.TEST_WRIST" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

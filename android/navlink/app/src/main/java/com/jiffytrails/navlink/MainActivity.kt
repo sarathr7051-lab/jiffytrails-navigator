@@ -17,6 +17,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 /**
@@ -35,6 +36,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var status: TextView
     private lateinit var permissionsText: TextView
+    private lateinit var wristButton: Button
 
     private val requestPerms =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -57,7 +59,11 @@ class MainActivity : AppCompatActivity() {
         root.addView(sectionLabel("Setup"))
         root.addView(permissionsText)
 
-        root.addView(button("Grant Bluetooth permissions") {
+        // Bluetooth *and* notifications: this button has asked for
+        // POST_NOTIFICATIONS on 33+ since before anything used it, and the
+        // wrist path is what finally makes that grant matter. Relabelled so it
+        // says what it does.
+        root.addView(button("Grant permissions") {
             val missing = btPermissions().filter { p ->
                 ContextCompat.checkSelfPermission(this, p) != android.content.pm.PackageManager.PERMISSION_GRANTED
             }.toMutableList()
@@ -78,6 +84,28 @@ class MainActivity : AppCompatActivity() {
         root.addView(button("Battery optimisation") {
             startActivity(LinkService.batteryOptimisationSettings())
         })
+
+        /*
+          The wrist band.
+
+          A backup path, not a second instrument: the band mirrors an ordinary
+          notification NavLink posts for itself, because Maps' own navigation
+          notification is an ongoing one and the Fit3 will not mirror those -
+          Maps does not even appear in Galaxy Wearable's app list. See
+          WristAlert.kt.
+
+          The test button is here rather than hidden behind adb because the
+          failure mode is silence. A band that never buzzes could be a missing
+          grant, an unpaired band, or JiffyTrails switched off in Galaxy
+          Wearable, and they are indistinguishable from the handlebar.
+        */
+        root.addView(sectionLabel("Wrist band"))
+        root.addView(body("Posts the next turn as a normal notification so a " +
+                          "paired band can mirror it. Buzzes on a new turn and " +
+                          "again inside 200 m."))
+        wristButton = button("") { WristAlert.setEnabled(this, !WristAlert.isEnabled(this)); refresh() }
+        root.addView(wristButton)
+        root.addView(button("Send a test alert") { WristAlert.test(this) })
 
         root.addView(sectionLabel("Link"))
         status = body("")
@@ -120,9 +148,16 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, p) == android.content.pm.PackageManager.PERMISSION_GRANTED
         }
 
+        wristButton.text =
+            if (WristAlert.isEnabled(this)) "Wrist turn alerts: ON" else "Wrist turn alerts: OFF"
+
         permissionsText.text = buildString {
             appendLine("${tick(btGranted)}  Bluetooth permissions")
             appendLine("${tick(notificationAccessGranted())}  Notification access")
+            // Reading, not posting. Without this the wrist path fails silently:
+            // notify() throws nothing when the grant is missing, so the only
+            // symptom is a band that never buzzes.
+            appendLine("${tick(notificationsAllowed())}  Notifications allowed")
             appendLine("${tick(svc.batteryOptimisationExempt)}  Battery optimisation exempt")
             if (svc.vendorWhitelistUnverifiable) {
                 appendLine()
@@ -153,6 +188,18 @@ class MainActivity : AppCompatActivity() {
         } else {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+
+    /**
+     * Whether this app may post notifications at all.
+     *
+     * Covers both halves in one call: the POST_NOTIFICATIONS runtime grant on
+     * 33+, and the user having switched the app off in Settings, which is
+     * invisible to a permission check. Distinct from notificationAccessGranted()
+     * above - that one is about READING other apps' notifications, this is about
+     * posting our own, and the wrist path needs both.
+     */
+    private fun notificationsAllowed(): Boolean =
+        NotificationManagerCompat.from(this).areNotificationsEnabled()
 
     private fun notificationAccessGranted(): Boolean {
         val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
