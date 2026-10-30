@@ -75,6 +75,14 @@ class NavListenerService : NotificationListenerService() {
     override fun onListenerDisconnected() {
         handler.removeCallbacks(poller)
         parser.reset()
+
+        // No listener means no more turns, so whatever is on the wrist is now
+        // the last thing we were told rather than the next thing to do. Clear
+        // it: the band's own 60 s timeout would get there eventually, but a
+        // stale turn is exactly the failure this project refuses everywhere
+        // else on the handlebar.
+        runCatching { WristAlert.clear(this) }
+
         Log.w(TAG, "listener disconnected")
         super.onListenerDisconnected()
     }
@@ -108,6 +116,22 @@ class NavListenerService : NotificationListenerService() {
 
     private fun push(update: NavUpdate) {
         LinkService.submitNav(update)
+
+        /*
+          The wrist band, strictly after the radio and strictly in a net.
+
+          Order is deliberate: the handlebar display is the instrument the rider
+          is steering by, and the band is a backup. Posting a notification takes
+          a trip through NotificationManager, so doing it first would put that
+          latency in front of every BLE write for the benefit of the lesser path.
+
+          Wrapped because it is new and the display path is not. Nothing
+          WristAlert can do - a missing POST_NOTIFICATIONS grant, a channel the
+          user deleted, an OEM throwing from notify() - is allowed to take the
+          display down with it.
+        */
+        runCatching { WristAlert.onUpdate(this, update) }
+            .onFailure { Log.w(TAG, "wrist alert failed: ${it.message}") }
     }
 
     /**
